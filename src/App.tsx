@@ -64,7 +64,7 @@ import {
   type Ledger,
   type Rule,
 } from "./model";
-import { db, mutateLedger, readLedger } from "./store";
+import { db, deleteAccount, mutateLedger, readLedger } from "./store";
 import { colors, icons } from "./icons";
 import Assistant from "./Assistant";
 
@@ -93,7 +93,14 @@ const methods = [
   "Otro",
 ];
 type Modal =
-  "expense" | "category" | "budget" | "account" | "rule" | "reserve" | null;
+  | "expense"
+  | "category"
+  | "budget"
+  | "account"
+  | "delete-account"
+  | "rule"
+  | "reserve"
+  | null;
 const uid = () => crypto.randomUUID();
 const blankCategory = (): Category => ({
   id: uid(),
@@ -194,6 +201,7 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signup, setSignup] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   useEffect(() => {
     if (!db) return;
     void db.auth.getSession().then((r) => setSession(r.data.session));
@@ -263,6 +271,7 @@ export default function App() {
     window.scrollTo(0, 0);
   };
   const open = (m: Modal) => {
+    if (m === "delete-account") setDeleteConfirmation("");
     if (m === "budget") setBudgetCurrency(baseCurrency);
     setError("");
     setModal(m);
@@ -1490,11 +1499,13 @@ export default function App() {
                   ? rule?.id
                     ? "Editar obligación"
                     : "Nueva obligación"
-                  : modal === "account"
-                    ? "Mi cuenta"
-                    : modal === "reserve"
-                      ? "Aporte al fondo"
-                      : "Presupuesto del mes"
+                  : modal === "delete-account"
+                    ? "Eliminar cuenta"
+                    : modal === "account"
+                      ? "Mi cuenta"
+                      : modal === "reserve"
+                        ? "Aporte al fondo"
+                        : "Presupuesto del mes"
           }
           close={() => setModal(null)}
         >
@@ -2069,6 +2080,15 @@ export default function App() {
                 >
                   <LogOut size={17} /> Cerrar sesión
                 </button>
+                <div className="actions">
+                  <button
+                    className="danger"
+                    type="button"
+                    onClick={() => open("delete-account")}
+                  >
+                    Eliminar cuenta
+                  </button>
+                </div>
               </>
             ) : db ? (
               <form
@@ -2125,6 +2145,72 @@ export default function App() {
                 recorrer la aplicación y consultar el presupuesto inicial.
               </p>
             ))}
+          {modal === "delete-account" && session?.user.email && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (deleteConfirmation !== "ELIMINAR" || busy) return;
+                const currentUser = session.user;
+                const currentPassword = String(
+                  new FormData(event.currentTarget).get("delete-password"),
+                );
+                void action(async () => {
+                  await deleteAccount(
+                    currentUser.id,
+                    currentUser.email!,
+                    currentPassword,
+                  );
+                  setSession(null);
+                  setData(guestLedger());
+                  setEmail("");
+                  setPassword("");
+                  go("home");
+                  finish("Cuenta eliminada.");
+                });
+              }}
+            >
+              <p>
+                Se borrarán permanentemente los movimientos, las categorías, los
+                comprobantes y las conversaciones de esta cuenta.
+              </p>
+              <label>
+                Contraseña actual
+                <input
+                  type="password"
+                  name="delete-password"
+                  autoComplete="current-password"
+                  required
+                />
+              </label>
+              <label>
+                Escribí ELIMINAR para confirmar
+                <input
+                  value={deleteConfirmation}
+                  onChange={(event) =>
+                    setDeleteConfirmation(event.target.value)
+                  }
+                  autoComplete="off"
+                  required
+                />
+              </label>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => open("account")}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="danger"
+                  disabled={busy || deleteConfirmation !== "ELIMINAR"}
+                >
+                  {busy ? "Eliminando…" : "Eliminar definitivamente"}
+                </button>
+              </div>
+            </form>
+          )}
           {modal === "rule" && (
             <form
               onSubmit={(e) => {

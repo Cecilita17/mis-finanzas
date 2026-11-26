@@ -15,7 +15,7 @@ export async function handler(request: Request) {
       ? url.pathname.slice("/backend/".length)
       : "");
   if (
-    !/^(auth\/v1\/(token|signup|logout|user|verify|recover)|rest\/v1\/(finance_ledgers|rpc\/save_finance_ledger)|storage\/v1\/object\/(sign\/|authenticated\/)?receipts(?:\/[\w.\/-]+)?)$/.test(
+    !/^(auth\/v1\/(token|signup|logout|user|verify|recover)|rest\/v1\/(finance_ledgers|rpc\/(save_finance_ledger|delete_finance_account))|storage\/v1\/object\/(sign\/|authenticated\/|list\/)?receipts(?:\/[\w.\/-]+)?)$/.test(
       path,
     ) ||
     path.split("/").some((p) => p === ".." || p === ".")

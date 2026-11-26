@@ -41,3 +41,48 @@ export async function mutateLedger(
   }
   throw new Error("Los datos cambiaron en otro dispositivo. Volvé a intentar.");
 }
+
+export async function deleteAccount(
+  id: string,
+  email: string,
+  password: string,
+) {
+  if (!db) throw new Error("La conexión a Supabase no está disponible.");
+  const confirmed = await db.auth.signInWithPassword({ email, password });
+  if (confirmed.error || confirmed.data.user?.id !== id)
+    throw new Error("No se pudo verificar la contraseña.");
+
+  const storage = db.storage.from("receipts");
+  const paths: string[] = [];
+  const folders = [id];
+  const pageSize = 100;
+  for (const folder of folders) {
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await storage.list(folder, {
+        limit: pageSize,
+        offset,
+        sortBy: { column: "name", order: "asc" },
+      });
+      if (error) throw new Error("No se pudieron consultar los comprobantes.");
+      for (const object of data) {
+        const path = folder + "/" + object.name;
+        if (object.id) paths.push(path);
+        else folders.push(path);
+      }
+      if (data.length < pageSize) break;
+    }
+  }
+  for (let offset = 0; offset < paths.length; offset += pageSize) {
+    const { error } = await storage.remove(
+      paths.slice(offset, offset + pageSize),
+    );
+    if (error)
+      throw new Error(
+        "No se pudieron borrar todos los comprobantes. Volvé a intentar.",
+      );
+  }
+
+  const { error } = await db.rpc("delete_finance_account");
+  if (error) throw error;
+  await db.auth.signOut({ scope: "local" });
+}
