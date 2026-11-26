@@ -25,7 +25,9 @@ export async function handler(request: Request) {
     return new Response(null, { status: 405 });
   if (path.includes("/rpc/") && request.method !== "POST")
     return new Response(null, { status: 405 });
-  url.searchParams.delete("_path");
+  for (const parameter of ["_path", "path", "_vercel_share"]) {
+    url.searchParams.delete(parameter);
+  }
   const headers = new Headers();
   for (const name of [
     "authorization",
