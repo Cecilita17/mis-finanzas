@@ -698,18 +698,12 @@ export default function App() {
               <div className="main-column">
                 <section className="card budget-card">
                   <div className="card-top">
-                    <div className="section-title">
-                      <span className="glyph sage">
-                        <Wallet size={19} />
-                      </span>
-                      <h2>Presupuesto mensual</h2>
-                    </div>
                     {monthSelector}
                   </div>
                   <div className="budget-core">
                     <div>
                       <div className="muted budget-label">
-                        Presupuesto total{" "}
+                        Disponible este mes{" "}
                         <button
                           className="mini-button"
                           aria-label="Editar presupuesto"
@@ -718,25 +712,9 @@ export default function App() {
                           <Pencil size={13} />
                         </button>
                       </div>
-                      <div className="big-money">{money(info.budget)}</div>
-                      <span className="currency-label">ARS</span>
+                      <div className="big-money">{money(info.remaining)}</div>
                     </div>
-                    <div
-                      className="budget-ring"
-                      style={{
-                        background:
-                          used > 0
-                            ? "conic-gradient(#929f7e " +
-                              Math.min(100, used) +
-                              "%, var(--track) 0)"
-                            : "var(--track)",
-                      }}
-                    >
-                      <div>
-                        <strong>{used}%</strong>
-                        <small>utilizado</small>
-                      </div>
-                    </div>
+                    <span className="budget-percent">{used}% utilizado</span>
                   </div>
                   <Meter value={used} />
                   <div className="budget-legend">
@@ -755,8 +733,8 @@ export default function App() {
                     <div>
                       <span className="dot sage" />{" "}
                       <div>
-                        <small>Disponible</small>
-                        <b>{money(info.remaining)}</b>
+                        <small>Presupuesto</small>
+                        <b>{money(info.budget)}</b>
                       </div>
                     </div>
                   </div>
@@ -776,10 +754,7 @@ export default function App() {
                 <section className="category-section">
                   <div className="section-heading">
                     <div>
-                      <h2>Gastos por categoría</h2>
-                      <p>
-                        El detalle de tu presupuesto, categoría por categoría.
-                      </p>
+                      <h2>Por categoría</h2>
                     </div>
                     <button
                       className="text-button"
@@ -1499,11 +1474,13 @@ export default function App() {
           close={() => setModal(null)}
         >
           {modal === "expense" && (
-            <form onSubmit={handleExpense}>
+            <form className="expense-form" onSubmit={handleExpense}>
               <div className="form-grid">
                 <label>
-                  Importe
+                  <span className="expense-label">Importe</span>
+                  <span className="expense-currency-mark" aria-hidden="true">$</span>
                   <input
+                    aria-label="Importe"
                     name="amount"
                     inputMode="decimal"
                     placeholder="15.000"
