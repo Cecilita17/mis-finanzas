@@ -67,6 +67,7 @@ import {
 import { db, deleteAccount, mutateLedger, readLedger } from "./store";
 import { colors, icons } from "./icons";
 import Assistant from "./Assistant";
+import AdminPanel from "./AdminPanel";
 
 type Page =
   | "home"
@@ -74,6 +75,7 @@ type Page =
   | "assistant"
   | "categories"
   | "more"
+  | "admin"
   | "stats"
   | "rules"
   | "reserve"
@@ -179,6 +181,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [month, setMonth] = useState(today().slice(0, 7));
   const [session, setSession] = useState<Session | null>(null);
+  const [adminId, setAdminId] = useState<string | null>(null);
   const [data, setData] = useState<Ledger>(guestLedger);
   const [modal, setModal] = useState<Modal>(null);
   const [budgetCurrency, setBudgetCurrency] = useState<Currency>("ARS");
@@ -211,6 +214,18 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
   const userId = session?.user.id;
+  const isAdmin = !!userId && adminId === userId;
+  useEffect(() => {
+    if (!userId || !db) return;
+    let active = true;
+    void db.rpc("is_finance_admin").then(({ data }) => {
+      if (active) setAdminId(data === true ? userId : null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   useEffect(() => {
     if (!userId) {
       setData(guestLedger());
@@ -423,6 +438,7 @@ export default function App() {
     assistant: "Asistente IA",
     categories: "Categorías",
     more: "Más",
+    admin: "Administración",
     stats: "Estadísticas",
     rules: "Pagos pendientes",
     reserve: "Fondo de imprevistos",
@@ -703,6 +719,8 @@ export default function App() {
                     assistant:
                       "Registrá gastos, escaneá tickets y consultá tu presupuesto.",
                     categories: "Organizá tus gastos a tu manera.",
+                    admin:
+                      "Consultá el registro y la actividad de las cuentas.",
                     more: "Preferencias y herramientas para tus finanzas.",
                     stats: "Descubrí cómo se mueve tu dinero.",
                     rules: "Planificá tus próximos vencimientos.",
@@ -1047,8 +1065,14 @@ export default function App() {
               }}
             />
           )}
+          {page === "admin" && isAdmin && <AdminPanel key={userId} />}
           {page === "more" && (
             <section className="card inner-card menu-list">
+              {isAdmin && (
+                <button onClick={() => go("admin")}>
+                  <Shield /> Administración <ChevronRight />
+                </button>
+              )}
               <button onClick={() => go("stats")}>
                 <BarChart3 /> Estadísticas <ChevronRight />
               </button>

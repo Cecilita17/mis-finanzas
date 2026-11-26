@@ -1760,3 +1760,31 @@ h1, h2, h3, .big-money, .brand b {
   .expense-form { min-height: calc(100% - 53px); display: flex; flex-direction: column; }
   .expense-form > .actions:last-child { margin-top: auto; padding-top: 14px; }
 }
+
+.admin-users {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.admin-users li {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.admin-users li > small {
+  display: block;
+  margin-top: 4px;
+}
+.admin-users dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.admin-users dt {
+  color: var(--muted);
+}
+.admin-users dd {
+  margin: 0;
+}
