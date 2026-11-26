@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.misfinanzas.android",
+      "sha256_cert_fingerprints": [
+        "EC:5C:26:38:D6:D1:65:BA:B9:09:A5:65:E9:BA:9D:68:32:DC:22:12:4B:E3:5D:3E:61:B7:36:17:12:30:39:8B"
+      ]
+    }
+  }
+]
