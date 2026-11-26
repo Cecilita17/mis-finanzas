@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application android:label="Mis Finanzas" android:icon="@drawable/wallet"
         android:usesCleartextTraffic="false" android:allowBackup="false"
         android:theme="@android:style/Theme.Translucent.NoTitleBar">
@@ -6,15 +8,29 @@
         <activity android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
             android:exported="true">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL"
-                android:value="https://mis-finanzas-ten-ecru.vercel.app/" />
+                android:value="@string/app_url" />
             <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
                 android:resource="@color/app_background" />
             <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
                 android:resource="@color/app_background" />
+            <meta-data android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
+                android:value="webview" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity"
+            android:exported="false" />
+        <activity android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:configChanges="orientation|screenSize" />
+        <activity android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:exported="false" android:excludeFromRecents="true">
+            <meta-data android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+                android:value="@string/app_url" />
         </activity>
     </application>
 </manifest>
