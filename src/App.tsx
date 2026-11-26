@@ -36,11 +36,19 @@ import {
 import {
   allocation,
   amountInput,
-  ars,
+  currencies,
+  changeBaseCurrency,
+  convertCategoryAllocations,
+  convertCurrency,
+  currencyRate,
+  expenseRates,
+  expenseValue,
+  fxInput,
+  toBase,
   categoryLimit,
   cents,
   days,
-  money,
+  money as formatMoney,
   monthLabel,
   obligations,
   projectedClose,
@@ -50,6 +58,7 @@ import {
   summary,
   today,
   type Category,
+  type Currency,
   type Expense,
   type Ledger,
   type Rule,
@@ -164,6 +173,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [data, setData] = useState<Ledger>(initialLedger);
   const [modal, setModal] = useState<Modal>(null);
+  const [budgetCurrency, setBudgetCurrency] = useState<Currency>("ARS");
   const [category, setCategory] = useState<Category | null>(null);
   const [expense, setExpense] = useState<Expense | null>(null);
   const [rule, setRule] = useState<Rule | null>(null);
@@ -238,6 +248,9 @@ export default function App() {
 
   const info = summary(data, month);
   const conf = settings(data, month);
+  const baseCurrency = data.baseCurrency ?? "ARS";
+  const money = (amount: number, currency: Currency = baseCurrency) =>
+    formatMoney(amount, currency);
   const active = data.categories.filter((c) => !c.archived);
   const selected = data.categories.find((c) => c.id === detail);
   const pending = obligations(data, month);
@@ -249,6 +262,7 @@ export default function App() {
     window.scrollTo(0, 0);
   };
   const open = (m: Modal) => {
+    if (m === "budget") setBudgetCurrency(baseCurrency);
     setError("");
     setModal(m);
   };
@@ -257,7 +271,7 @@ export default function App() {
     open("expense");
   };
   const editCategory = (c: Category | null = null) => {
-    setCategory(c ?? blankCategory());
+    setCategory(c ?? { ...blankCategory(), currency: baseCurrency });
     open("category");
   };
   async function save(change: (d: Ledger) => Ledger) {
@@ -333,14 +347,19 @@ export default function App() {
       const file = form.get("receipt") as File | null;
       const attachment = file?.size ? await upload(file) : null;
       const date = String(form.get("date"));
+      const currency = form.get("currency") as Currency;
       const movement: Expense = {
         id: expense?.id ?? uid(),
         amount,
-        currency: form.get("currency") as "ARS" | "USD",
-        rate:
-          expense?.currency === "USD" && form.get("currency") === "USD"
-            ? expense.rate
-            : settings(data, date.slice(0, 7)).rate,
+        currency,
+        ...(expense?.currency === currency && expense.date === date
+          ? {
+              rate: expense.rate,
+              baseRate: expense.baseRate,
+              nzdPerUsd: expense.nzdPerUsd,
+              baseCurrency: expense.baseCurrency,
+            }
+          : expenseRates(data, currency, date.slice(0, 7))),
         category: String(form.get("category")),
         date,
         description: String(form.get("description")).trim(),
@@ -422,7 +441,7 @@ export default function App() {
     </div>
   );
   const catRow = (c: Category) => {
-    const budget = ars(allocation(data, c, month), c.currency, conf.rate);
+    const budget = toBase(data, allocation(data, c, month), c.currency, month);
     const spent = info.categorySpent[c.id] ?? 0;
     const ratio = budget ? (spent / budget) * 100 : spent ? 100 : 0;
     return (
@@ -697,9 +716,7 @@ export default function App() {
             <div className="home-grid">
               <div className="main-column">
                 <section className="card budget-card">
-                  <div className="card-top">
-                    {monthSelector}
-                  </div>
+                  <div className="card-top">{monthSelector}</div>
                   <div className="budget-core">
                     <div>
                       <div className="muted budget-label">
@@ -877,10 +894,11 @@ export default function App() {
                           .reduce(
                             (n, c) =>
                               n +
-                              ars(
+                              toBase(
+                                data,
                                 allocation(data, c, month),
                                 c.currency,
-                                conf.rate,
+                                month,
                               ),
                             0,
                           ),
@@ -1065,10 +1083,11 @@ export default function App() {
           {page === "detail" &&
             selected &&
             (() => {
-              const budget = ars(
+              const budget = toBase(
+                data,
                 allocation(data, selected, month),
                 selected.currency,
-                conf.rate,
+                month,
               );
               const spent = info.categorySpent[selected.id] ?? 0;
               const elapsed =
@@ -1138,6 +1157,7 @@ export default function App() {
                       </p>
                     )}
                     <Chart
+                      currency={baseCurrency}
                       title="Evolución del gasto"
                       values={Array.from({ length: days(month) }, (_, i) => {
                         const date =
@@ -1149,14 +1169,12 @@ export default function App() {
                               (e) =>
                                 e.category === selected.id && e.date <= date,
                             )
-                            .reduce(
-                              (n, e) => n + ars(e.amount, e.currency, e.rate),
-                              0,
-                            ),
+                            .reduce((n, e) => n + expenseValue(data, e), 0),
                         ];
                       })}
                     />
                     <Chart
+                      currency={baseCurrency}
                       title="Comparación mensual"
                       values={[-2, -1, 0].map((offset) => {
                         const m = shift(month, offset);
@@ -1268,6 +1286,9 @@ export default function App() {
                               );
                               if (!current || current.paid) return d;
                               const date = today();
+                              const currency = current.statement
+                                ? (d.baseCurrency ?? "ARS")
+                                : current.currency;
                               return {
                                 ...d,
                                 paid: [...d.paid, r.key],
@@ -1279,11 +1300,12 @@ export default function App() {
                                         amount: current.statement
                                           ? current.remaining
                                           : current.amount,
-                                        currency: current.statement
-                                          ? "ARS"
-                                          : current.currency,
-                                        rate: settings(d, date.slice(0, 7))
-                                          .rate,
+                                        currency,
+                                        ...expenseRates(
+                                          d,
+                                          currency,
+                                          date.slice(0, 7),
+                                        ),
                                         category: r.category,
                                         date,
                                         description: r.name,
@@ -1373,6 +1395,7 @@ export default function App() {
                 </div>
               </div>
               <Chart
+                currency={baseCurrency}
                 title="Distribución y categorías con mayor gasto"
                 values={Object.entries(info.categorySpent)
                   .sort((a, b) => b[1] - a[1])
@@ -1383,15 +1406,17 @@ export default function App() {
                   ])}
               />
               <Chart
+                currency={baseCurrency}
                 title="Gastos diarios"
                 values={Array.from({ length: days(month) }, (_, i) => [
                   String(i + 1),
                   info.expenses
                     .filter((e) => Number(e.date.slice(8)) === i + 1)
-                    .reduce((n, e) => n + ars(e.amount, e.currency, e.rate), 0),
+                    .reduce((n, e) => n + expenseValue(data, e), 0),
                 ])}
               />
               <Chart
+                currency={baseCurrency}
                 title="Evolución semanal"
                 values={Array.from(
                   { length: Math.ceil(days(month) / 7) },
@@ -1402,14 +1427,12 @@ export default function App() {
                         (e) =>
                           Math.floor((Number(e.date.slice(8)) - 1) / 7) === i,
                       )
-                      .reduce(
-                        (n, e) => n + ars(e.amount, e.currency, e.rate),
-                        0,
-                      ),
+                      .reduce((n, e) => n + expenseValue(data, e), 0),
                   ],
                 )}
               />
               <Chart
+                currency={baseCurrency}
                 title="Comparación mensual"
                 values={[-3, -2, -1, 0].map((offset) => {
                   const m = shift(month, offset);
@@ -1417,6 +1440,7 @@ export default function App() {
                 })}
               />
               <Chart
+                currency={baseCurrency}
                 title="Evolución del fondo de emergencia"
                 values={[-3, -2, -1, 0].map((offset) => {
                   const m = shift(month, offset);
@@ -1478,7 +1502,9 @@ export default function App() {
               <div className="form-grid">
                 <label>
                   <span className="expense-label">Importe</span>
-                  <span className="expense-currency-mark" aria-hidden="true">$</span>
+                  <span className="expense-currency-mark" aria-hidden="true">
+                    $
+                  </span>
                   <input
                     aria-label="Importe"
                     name="amount"
@@ -1494,10 +1520,11 @@ export default function App() {
                   <select
                     aria-label="Moneda"
                     name="currency"
-                    defaultValue={expense?.currency ?? "ARS"}
+                    defaultValue={expense?.currency ?? baseCurrency}
                   >
-                    <option>ARS</option>
-                    <option>USD</option>
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
@@ -1713,19 +1740,39 @@ export default function App() {
                   if (!next.name)
                     throw new Error("Ingresá el nombre de la categoría.");
                   await save((d) => {
-                    const monthly = settings(d, month);
+                    const months = convertCategoryAllocations(
+                      d,
+                      next.id,
+                      next.currency,
+                    );
+                    const monthly = settings({ ...d, months }, month);
+                    currencyRate(monthly, next.currency);
                     const allocations = { ...monthly.allocations };
+                    const savedCategory =
+                      onlyThisMonth && next.currency !== category.currency
+                        ? {
+                            ...next,
+                            amount: convertCurrency(
+                              category.amount,
+                              category.currency,
+                              next.currency,
+                              monthly,
+                            ),
+                          }
+                        : next;
                     if (onlyThisMonth) allocations[next.id] = amount;
                     else delete allocations[next.id];
                     return {
                       ...d,
                       months: {
-                        ...d.months,
+                        ...months,
                         [month]: { ...monthly, allocations },
                       },
                       categories: d.categories.some((c) => c.id === next.id)
-                        ? d.categories.map((c) => (c.id === next.id ? next : c))
-                        : [...d.categories, next],
+                        ? d.categories.map((c) =>
+                            c.id === next.id ? savedCategory : c,
+                          )
+                        : [...d.categories, savedCategory],
                     };
                   });
                   finish("Categoría guardada.");
@@ -1780,8 +1827,9 @@ export default function App() {
                     name="currency"
                     defaultValue={category.currency}
                   >
-                    <option>ARS</option>
-                    <option>USD</option>
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
@@ -1871,25 +1919,59 @@ export default function App() {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
                 void action(async () => {
-                  const budget = cents(String(f.get("budget"))),
-                    rate = cents(String(f.get("rate")));
+                  const rawBudget = String(f.get("budget") ?? "").trim();
+                  const budget = rawBudget ? cents(rawBudget) : undefined;
+                  const rate = cents(String(f.get("rate")));
                   if (
-                    !Number.isSafeInteger(budget) ||
-                    budget < 0 ||
+                    (budget !== undefined &&
+                      (!Number.isSafeInteger(budget) || budget < 0)) ||
                     !Number.isSafeInteger(rate) ||
                     rate <= 0
                   )
                     throw new Error(
                       "Revisá el presupuesto y el tipo de cambio.",
                     );
-                  await save((d) => ({
-                    ...d,
-                    months: {
-                      ...d.months,
-                      [month]: { ...settings(d, month), budget, rate },
-                    },
-                    ...(f.has("default") ? { budget, rate } : {}),
-                  }));
+                  const base = budgetCurrency;
+                  const rawNzd = String(f.get("nzdPerUsd") ?? "").trim();
+                  const nzdPerUsd = rawNzd ? fxInput(rawNzd) : conf.nzdPerUsd;
+                  if (
+                    nzdPerUsd !== undefined &&
+                    (!Number.isSafeInteger(nzdPerUsd) ||
+                      nzdPerUsd <= 0 ||
+                      nzdPerUsd > 1_000_000)
+                  )
+                    throw new Error(
+                      "Ingresá una cotización de NZD válida, de hasta cuatro decimales.",
+                    );
+                  if (base === "NZD" && !nzdPerUsd)
+                    throw new Error("Ingresá cuántos NZD equivalen a 1 USD.");
+                  await save((d) => {
+                    const next = {
+                      ...d,
+                      nzdPerUsd: f.has("default")
+                        ? nzdPerUsd
+                        : (d.nzdPerUsd ?? nzdPerUsd),
+                      months: {
+                        ...d.months,
+                        [month]: {
+                          ...settings(d, month),
+                          rate,
+                          nzdPerUsd,
+                        },
+                      },
+                      ...(f.has("default") ? { rate } : {}),
+                    };
+                    const converted = changeBaseCurrency(next, base);
+                    if (budget === undefined) return converted;
+                    return {
+                      ...converted,
+                      months: {
+                        ...converted.months,
+                        [month]: { ...settings(converted, month), budget },
+                      },
+                      ...(f.has("default") ? { budget } : {}),
+                    };
+                  });
                   finish("Presupuesto actualizado.");
                 });
               }}
@@ -1897,16 +1979,42 @@ export default function App() {
               <p className="muted capitalize">{monthLabel(month)}</p>
               <div className="form-grid">
                 <label>
-                  Presupuesto total (ARS)
+                  Moneda principal
+                  <select
+                    name="baseCurrency"
+                    value={budgetCurrency}
+                    onChange={(e) =>
+                      setBudgetCurrency(e.target.value as Currency)
+                    }
+                  >
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Presupuesto total ({budgetCurrency})
                   <input
+                    key={budgetCurrency}
                     name="budget"
                     inputMode="decimal"
-                    defaultValue={amountInput(conf.budget)}
-                    required
+                    defaultValue={
+                      budgetCurrency === baseCurrency
+                        ? amountInput(conf.budget)
+                        : ""
+                    }
+                    placeholder={
+                      budgetCurrency !== baseCurrency
+                        ? "Convertir presupuesto actual"
+                        : "0"
+                    }
+                    required={
+                      budgetCurrency === baseCurrency && conf.budget !== 0
+                    }
                   />
                 </label>
                 <label>
-                  Pesos por 1 USD
+                  ARS por 1 USD
                   <input
                     name="rate"
                     inputMode="decimal"
@@ -1914,7 +2022,25 @@ export default function App() {
                     required
                   />
                 </label>
+                <label>
+                  NZD por 1 USD
+                  <input
+                    name="nzdPerUsd"
+                    inputMode="decimal"
+                    placeholder="Ej. 1,7000"
+                    defaultValue={
+                      conf.nzdPerUsd
+                        ? String(conf.nzdPerUsd / 10_000).replace(".", ",")
+                        : ""
+                    }
+                  />
+                </label>
               </div>
+              <p className="muted">
+                Si cambiás la moneda principal, dejá el importe vacío para
+                convertir el presupuesto actual. Los aportes y presupuestos
+                anteriores se convierten con la cotización configurada.
+              </p>
               <label className="check">
                 <input type="checkbox" name="default" /> Usar para meses sin
                 presupuesto propio
@@ -2022,6 +2148,7 @@ export default function App() {
                       : undefined,
                   };
                   if (!next.name) throw new Error("Ingresá un nombre.");
+                  currencyRate(settings(data, month), next.currency);
                   await save((d) => {
                     if (
                       next.statement &&
@@ -2075,10 +2202,11 @@ export default function App() {
                   <select
                     aria-label="Moneda"
                     name="currency"
-                    defaultValue={rule?.currency}
+                    defaultValue={rule?.currency ?? baseCurrency}
                   >
-                    <option>ARS</option>
-                    <option>USD</option>
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
@@ -2183,7 +2311,7 @@ export default function App() {
               }}
             >
               <label>
-                Importe (ARS)
+                Importe ({baseCurrency})
                 <input name="amount" inputMode="decimal" required />
               </label>
               <label>
@@ -2217,9 +2345,11 @@ export default function App() {
 function Chart({
   title,
   values,
+  currency,
 }: {
   title: string;
   values: [string, number][];
+  currency: Currency;
 }) {
   const max = Math.max(1, ...values.map((v) => v[1]));
   return (
@@ -2228,7 +2358,10 @@ function Chart({
       {values.some((v) => v[1] > 0) ? (
         <div className={"chart-bars " + (values.length > 10 ? "dense" : "")}>
           {values.map(([label, value], index) => (
-            <div key={label} title={label + " · " + money(value)}>
+            <div
+              key={label}
+              title={label + " · " + formatMoney(value, currency)}
+            >
               <i
                 style={{
                   height: Math.max(2, (value / max) * 100) + "%",

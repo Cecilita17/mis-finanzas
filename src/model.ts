@@ -1,4 +1,5 @@
-export type Currency = "ARS" | "USD";
+export const currencies = ["ARS", "USD", "NZD"] as const;
+export type Currency = (typeof currencies)[number];
 export type Category = {
   id: string;
   name: string;
@@ -18,6 +19,9 @@ export type Expense = {
   amount: number;
   currency: Currency;
   rate: number;
+  baseRate?: number;
+  nzdPerUsd?: number;
+  baseCurrency?: Currency;
   category: string;
   date: string;
   description: string;
@@ -78,9 +82,16 @@ export type Ledger = {
   messages: Message[];
   budget: number;
   rate: number;
+  nzdPerUsd?: number;
+  baseCurrency?: Currency;
   months: Record<
     string,
-    { budget: number; rate: number; allocations: Record<string, number> }
+    {
+      budget: number;
+      rate: number;
+      nzdPerUsd?: number;
+      allocations: Record<string, number>;
+    }
   >;
   paid: string[];
   receipts: Record<string, string>;
@@ -158,7 +169,7 @@ export function money(cents: number, currency: Currency = "ARS") {
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency,
-    currencyDisplay: currency === "USD" ? "code" : "narrowSymbol",
+    currencyDisplay: currency !== "ARS" ? "code" : "narrowSymbol",
     minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   }).format(cents / 100);
@@ -177,18 +188,163 @@ export function cents(input: string) {
     ? parsed
     : NaN;
 }
+function roundedRatio(amount: number, numerator: number, denominator: number) {
+  const value = BigInt(Math.abs(amount)) * BigInt(numerator);
+  return (
+    Math.sign(amount) *
+    Number((value + BigInt(denominator) / 2n) / BigInt(denominator))
+  );
+}
 export function ars(amount: number, currency: Currency, rate: number) {
-  return currency === "USD"
-    ? Number((BigInt(amount) * BigInt(rate) + 50n) / 100n)
-    : amount;
+  return currency === "ARS" ? amount : roundedRatio(amount, rate, 100);
 }
 export function settings(data: Ledger, month: string) {
+  const config = data.months[month] ?? {
+    budget: data.budget,
+    rate: data.rate,
+    allocations: {},
+  };
+  return { ...config, nzdPerUsd: config.nzdPerUsd ?? data.nzdPerUsd };
+}
+export function currencyRate(
+  config: { rate: number; nzdPerUsd?: number },
+  currency: Currency,
+) {
+  if (currency === "ARS") return 100;
+  if (currency === "USD") return config.rate;
+  if (!config.nzdPerUsd)
+    throw new Error(
+      "Configurá la cotización de NZD en Presupuesto y tipo de cambio.",
+    );
+  return Math.max(1, roundedRatio(config.rate, 10_000, config.nzdPerUsd));
+}
+function exchangeDollarPair(
+  amount: number,
+  from: Currency,
+  to: Currency,
+  nzdPerUsd?: number,
+) {
+  if (!nzdPerUsd) return undefined;
+  if (from === "USD" && to === "NZD")
+    return roundedRatio(amount, nzdPerUsd, 10_000);
+  if (from === "NZD" && to === "USD")
+    return roundedRatio(amount, 10_000, nzdPerUsd);
+  return undefined;
+}
+export function convertCurrency(
+  amount: number,
+  from: Currency,
+  to: Currency,
+  config: { rate: number; nzdPerUsd?: number },
+) {
+  if (from === to) return amount;
   return (
-    data.months[month] ?? {
-      budget: data.budget,
-      rate: data.rate,
-      allocations: {},
-    }
+    exchangeDollarPair(amount, from, to, config.nzdPerUsd) ??
+    roundedRatio(amount, currencyRate(config, from), currencyRate(config, to))
+  );
+}
+export function toBase(
+  data: Ledger,
+  amount: number,
+  currency: Currency,
+  month: string,
+) {
+  return convertCurrency(
+    amount,
+    currency,
+    data.baseCurrency ?? "ARS",
+    settings(data, month),
+  );
+}
+export function expenseValue(data: Ledger, expense: Expense) {
+  const base = data.baseCurrency ?? "ARS";
+  if (expense.currency === base) return expense.amount;
+  const month = settings(data, expense.date.slice(0, 7));
+  const direct = exchangeDollarPair(
+    expense.amount,
+    expense.currency,
+    base,
+    expense.nzdPerUsd ?? month.nzdPerUsd,
+  );
+  if (direct !== undefined) return direct;
+  const rate =
+    expense.baseCurrency === base && expense.baseRate
+      ? expense.baseRate
+      : currencyRate(month, base);
+  return roundedRatio(
+    expense.amount,
+    expense.currency === "ARS" ? 100 : expense.rate,
+    rate,
+  );
+}
+export function expenseRates(data: Ledger, currency: Currency, month: string) {
+  const baseCurrency = data.baseCurrency ?? "ARS";
+  const config = settings(data, month);
+  return {
+    rate: currencyRate(config, currency),
+    baseRate: currencyRate(config, baseCurrency),
+    nzdPerUsd: config.nzdPerUsd,
+    baseCurrency,
+  };
+}
+export function changeBaseCurrency(data: Ledger, baseCurrency: Currency) {
+  const from = data.baseCurrency ?? "ARS";
+  if (baseCurrency === from) return data;
+  const convert = (
+    amount: number,
+    config: { rate: number; nzdPerUsd?: number },
+  ) => convertCurrency(amount, from, baseCurrency, config);
+  return {
+    ...data,
+    baseCurrency,
+    budget: convert(data.budget, data),
+    months: Object.fromEntries(
+      Object.entries(data.months).map(([month, config]) => [
+        month,
+        { ...config, budget: convert(config.budget, settings(data, month)) },
+      ]),
+    ),
+    reserves: data.reserves.map((r) => ({
+      ...r,
+      amount: convert(r.amount, settings(data, r.date.slice(0, 7))),
+    })),
+  };
+}
+export function fxInput(raw: string) {
+  const input = raw.trim().replace(",", ".");
+  if (!/^\d+(\.\d{1,4})?$/.test(input)) return NaN;
+  const [integer, fraction = ""] = input.split(".");
+  return Number(integer) * 10_000 + Number(fraction.padEnd(4, "0"));
+}
+export function convertCategoryAllocations(
+  data: Ledger,
+  categoryId: string,
+  currency: Currency,
+) {
+  const previous = data.categories.find(
+    (category) => category.id === categoryId,
+  );
+  if (!previous || previous.currency === currency) return data.months;
+  return Object.fromEntries(
+    Object.entries(data.months).map(([month, config]) => {
+      const amount = config.allocations[categoryId];
+      if (amount === undefined) return [month, config];
+      return [
+        month,
+        {
+          ...config,
+          allocations: {
+            ...config.allocations,
+            [categoryId]: convertCurrency(
+              amount,
+              previous.currency,
+              currency,
+              settings(data, month),
+            ),
+          },
+        },
+      ];
+    }),
   );
 }
 export function allocation(data: Ledger, category: Category, month: string) {
@@ -225,9 +381,9 @@ export function obligations(data: Ledger, month: string) {
           e.method === "Tarjeta de crédito" &&
           !e.obligation,
       );
-      const total = ars(rule.amount, rule.currency, settings(data, month).rate);
+      const total = toBase(data, rule.amount, rule.currency, month);
       const charged = rule.statement
-        ? matched.reduce((sum, e) => sum + ars(e.amount, e.currency, e.rate), 0)
+        ? matched.reduce((sum, e) => sum + expenseValue(data, e), 0)
         : 0;
       return {
         ...rule,
@@ -246,7 +402,7 @@ export function summary(data: Ledger, month: string, date = today()) {
   const categorySpent: Record<string, number> = {};
   for (const e of expenses)
     categorySpent[e.category] =
-      (categorySpent[e.category] ?? 0) + ars(e.amount, e.currency, e.rate);
+      (categorySpent[e.category] ?? 0) + expenseValue(data, e);
   const spent = Object.values(categorySpent).reduce((a, b) => a + b, 0);
   const pending = obligations(data, month)
     .filter((r) => !r.paid)
@@ -258,7 +414,7 @@ export function summary(data: Ledger, month: string, date = today()) {
         a +
         Math.max(
           0,
-          ars(allocation(data, c, month), c.currency, config.rate) -
+          toBase(data, allocation(data, c, month), c.currency, month) -
             (categorySpent[c.id] ?? 0),
         ),
       0,
@@ -280,7 +436,7 @@ export function summary(data: Ledger, month: string, date = today()) {
         Math.max(
           0,
           (categorySpent[c.id] ?? 0) -
-            ars(allocation(data, c, month), c.currency, config.rate),
+            toBase(data, allocation(data, c, month), c.currency, month),
         ),
       0,
     );
@@ -307,12 +463,12 @@ export function reserveBalance(data: Ledger, month: string) {
   const funds = data.categories.filter((c) => c.kind === "reserve");
   if (start)
     for (let cursor = start; cursor <= month; cursor = shift(cursor, 1)) {
-      const config = settings(data, cursor);
       accumulated += funds
         .filter((c) => !c.archived)
         .reduce(
           (total, c) =>
-            total + ars(allocation(data, c, cursor), c.currency, config.rate),
+            total +
+            toBase(data, allocation(data, c, cursor), c.currency, cursor),
           0,
         );
     }
@@ -321,7 +477,7 @@ export function reserveBalance(data: Ledger, month: string) {
       (e) =>
         e.date.slice(0, 7) <= month && funds.some((c) => c.id === e.category),
     )
-    .reduce((total, e) => total + ars(e.amount, e.currency, e.rate), 0);
+    .reduce((total, e) => total + expenseValue(data, e), 0);
   const contributions = data.reserves
     .filter((r) => r.date.slice(0, 7) <= month)
     .reduce((sum, r) => sum + r.amount, 0);
@@ -344,7 +500,7 @@ export function projectedClose(data: Ledger, month: string, date = today()) {
   );
   const variableSpent = info.expenses
     .filter((e) => variable.has(e.category) && !e.obligation)
-    .reduce((sum, e) => sum + ars(e.amount, e.currency, e.rate), 0);
+    .reduce((sum, e) => sum + expenseValue(data, e), 0);
   return (
     info.spent +
     info.pending +
@@ -386,12 +542,8 @@ export function categoryLimit(
       : end.toISOString().slice(0, 10);
   const used = data.expenses
     .filter((e) => e.category === category.id && e.date >= from && e.date <= to)
-    .reduce((n, e) => n + ars(e.amount, e.currency, e.rate), 0);
-  const limit = ars(
-    category.limit,
-    category.currency,
-    settings(data, month).rate,
-  );
+    .reduce((n, e) => n + expenseValue(data, e), 0);
+  const limit = toBase(data, category.limit, category.currency, month);
   const divisor =
     category.period === "weekly"
       ? 1 + Math.round((end.getTime() - anchor.getTime()) / 86400000)

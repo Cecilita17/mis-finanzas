@@ -4,6 +4,12 @@ import {
   allocation,
   ars,
   cents,
+  changeBaseCurrency,
+  expenseRates,
+  expenseValue,
+  fxInput,
+  money,
+  toBase,
   days,
   initial,
   obligations,
@@ -151,4 +157,31 @@ test("reconcilia un resumen con compras previas a su día de cierre", () => {
   ];
   assert.equal(obligations(data, month)[0].remaining, 12_000_000);
   assert.equal(obligations(data, "2026-12")[0].remaining, 16_000_000);
+});
+
+test("convierte USD y NZD con cuatro decimales y mantiene la cotización registrada", () => {
+  const data = {
+    ...fixture(),
+    baseCurrency: "NZD" as const,
+    nzdPerUsd: fxInput("1,7125"),
+  };
+  const usd = expense({
+    currency: "USD",
+    amount: 20_000,
+    ...expenseRates(data, "USD", month),
+  });
+  const nzd = expense({
+    currency: "NZD",
+    amount: 5_000,
+    ...expenseRates(data, "NZD", month),
+  });
+  assert.equal(toBase(data, 20_000, "USD", month), 34_250);
+  assert.equal(expenseValue({ ...data, nzdPerUsd: 20_000 }, usd), 34_250);
+  assert.equal(expenseValue(data, { ...usd, amount: -20_000 }), -34_250);
+  assert.equal(summary({ ...data, expenses: [usd, nzd] }, month).spent, 39_250);
+  const backToUsd = changeBaseCurrency({ ...data, budget: 171_250 }, "USD");
+  assert.equal(backToUsd.budget, 100_000);
+  assert.equal(expenseValue(backToUsd, nzd), 2_920);
+  assert.match(money(500, "NZD"), /NZD/);
+  assert.match(money(500, "USD"), /USD/);
 });

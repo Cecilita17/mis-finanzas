@@ -202,6 +202,35 @@ test("valida en backend propuestas de Groq, confirmaciones y tickets duplicados"
       (await call({ action: "confirm", id: category.id, items: [] })).status,
       422,
     );
+    ledger = { ...ledger, baseCurrency: "NZD", nzdPerUsd: 17_125 };
+    result = {
+      text: "Propuesta mixta",
+      items: [
+        { ...movement("2", 20_000, "Compra USD"), currency: "USD" },
+        { ...movement("2", 5_000, "Compra NZD"), currency: "NZD" },
+      ],
+    };
+    const mixed = await proposal({ text: "Gasté 200 USD y 50 NZD." });
+    assert.equal(
+      (await call({ action: "confirm", id: mixed.id, items: mixed.items }))
+        .status,
+      200,
+    );
+    result = {
+      text: "",
+      query: {
+        kind: "expenses",
+        from: date,
+        to: date,
+        keyword: "compra",
+        category: "2",
+      },
+    };
+    const totals = await call({
+      action: "ask",
+      text: "¿Cuánto gasté en estas compras?",
+    });
+    assert.match((await totals.json()).messages[1].text, /NZD\s*392,50/);
   } finally {
     globalThis.fetch = realFetch;
     for (const key of [

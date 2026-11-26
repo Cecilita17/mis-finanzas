@@ -14,6 +14,8 @@ import {
   money,
   amountInput,
   cents,
+  currencies,
+  type Currency,
   type Expense,
   type Ledger,
   type Proposal,
@@ -284,21 +286,22 @@ function ProposalCard({
   const [adjustmentCategory, setAdjustmentCategory] = useState("");
   const totals = items.reduce(
     (a, i) => ({ ...a, [i.currency]: a[i.currency] + i.amount }),
-    { ARS: 0, USD: 0 },
+    { ARS: 0, USD: 0, NZD: 0 },
   );
   const cats = data.categories.filter((c) => !c.archived);
   const categoriesMissing = items.some(
     (e) => !cats.some((c) => c.id === e.category),
   );
   const adjustment = proposal.receiptReview?.adjustment ?? draftAdjustment;
-  const total = totals.ARS + adjustment;
+  const receiptCurrency = proposal.items[0]?.currency ?? "ARS";
+  const total = totals[receiptCurrency] + adjustment;
   const detectedTotal = proposal.receipt?.total;
   const hasDifference = detectedTotal !== undefined && detectedTotal !== total;
   const validReceipt =
     !proposal.receipt ||
     (Number.isSafeInteger(total) &&
       total > 0 &&
-      items.every((item) => item.currency === "ARS"));
+      items.every((item) => item.currency === receiptCurrency));
   const edit = (index: number, patch: Partial<Expense>) =>
     setItems((values) =>
       values.map((item, i) => (index === i ? { ...item, ...patch } : item)),
@@ -339,6 +342,21 @@ function ProposalCard({
                   }
                 />
               </label>
+              {!proposal.receipt && (
+                <label>
+                  Moneda
+                  <select
+                    value={item.currency}
+                    onChange={(e) =>
+                      edit(i, { currency: e.target.value as Currency })
+                    }
+                  >
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Categoría
                 <select
@@ -387,7 +405,7 @@ function ProposalCard({
                   {"discount" in item &&
                   typeof item.discount === "number" &&
                   item.discount > 0
-                    ? " · Descuento " + money(item.discount)
+                    ? " · Descuento " + money(item.discount, item.currency)
                     : ""}
                 </small>
               </div>
@@ -400,12 +418,12 @@ function ProposalCard({
         <p className="proposal-total">
           Total a registrar{" "}
           <b>
-            {[
-              totals.ARS || !totals.USD ? money(total) : "",
-              totals.USD ? money(totals.USD, "USD") : "",
-            ]
-              .filter(Boolean)
-              .join(" + ")}
+            {proposal.receipt
+              ? money(total, receiptCurrency)
+              : currencies
+                  .filter((currency) => totals[currency] !== 0)
+                  .map((currency) => money(totals[currency], currency))
+                  .join(" + ") || money(0, data.baseCurrency)}
           </b>
         </p>
       )}
@@ -413,7 +431,7 @@ function ProposalCard({
         <>
           {!!adjustment && (
             <label>
-              Ajuste de {money(adjustment)}
+              Ajuste de {money(adjustment, receiptCurrency)}
               <select
                 value={adjustmentCategory}
                 onChange={(e) => setAdjustmentCategory(e.target.value)}
@@ -438,7 +456,9 @@ function ProposalCard({
                 <button
                   className="text-button"
                   disabled={busy}
-                  onClick={() => setAdjustment(detectedTotal - totals.ARS)}
+                  onClick={() =>
+                    setAdjustment(detectedTotal - totals[receiptCurrency])
+                  }
                 >
                   Aplicar diferencia como ajuste
                 </button>
@@ -456,7 +476,7 @@ function ProposalCard({
           )}
           {!proposal.status && !validReceipt && (
             <p className="error">
-              El total a registrar debe ser positivo y estar en ARS.
+              El total a registrar debe ser positivo y usar una sola moneda.
             </p>
           )}
           {proposal.receipt.warnings.map((w, i) => (
