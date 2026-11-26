@@ -277,9 +277,6 @@ function ProposalCard({
 }) {
   const [draftItems, setItems] = useState(proposal.items);
   const items = proposal.confirmedItems ?? draftItems;
-  const [totalInput, setTotalInput] = useState(() =>
-    amountInput(proposal.receipt?.total ?? 0),
-  );
   const [draftAdjustment, setAdjustment] = useState(
     proposal.receipt?.adjustment ?? 0,
   );
@@ -293,14 +290,14 @@ function ProposalCard({
   const categoriesMissing = items.some(
     (e) => !cats.some((c) => c.id === e.category),
   );
-  const total = proposal.receiptReview?.total ?? cents(totalInput);
   const adjustment = proposal.receiptReview?.adjustment ?? draftAdjustment;
-  const difference = total - totals.ARS - adjustment;
-  const validTotal = Number.isSafeInteger(total) && total > 0;
-  const match =
+  const total = totals.ARS + adjustment;
+  const detectedTotal = proposal.receipt?.total;
+  const hasDifference = detectedTotal !== undefined && detectedTotal !== total;
+  const validReceipt =
     !proposal.receipt ||
-    (validTotal &&
-      !difference &&
+    (Number.isSafeInteger(total) &&
+      total > 0 &&
       items.every((item) => item.currency === "ARS"));
   const edit = (index: number, patch: Partial<Expense>) =>
     setItems((values) =>
@@ -310,7 +307,7 @@ function ProposalCard({
     <div className="proposal">
       <h3>
         {proposal.receipt
-          ? "Revisión del ticket"
+          ? "Revisión del comprobante"
           : proposal.category
             ? "Cambio de categoría"
             : "Gastos propuestos"}
@@ -401,10 +398,10 @@ function ProposalCard({
       ))}
       {items.length > 0 && (
         <p className="proposal-total">
-          Total de productos{" "}
+          Total a registrar{" "}
           <b>
             {[
-              totals.ARS || !totals.USD ? money(totals.ARS) : "",
+              totals.ARS || !totals.USD ? money(total) : "",
               totals.USD ? money(totals.USD, "USD") : "",
             ]
               .filter(Boolean)
@@ -414,21 +411,6 @@ function ProposalCard({
       )}
       {proposal.receipt && (
         <>
-          {editing && !proposal.status ? (
-            <label>
-              Total del comprobante (ARS)
-              <input
-                inputMode="decimal"
-                value={totalInput}
-                onChange={(e) => setTotalInput(e.target.value)}
-              />
-            </label>
-          ) : (
-            <p className="proposal-total">
-              Total del ticket{" "}
-              <b>{money(validTotal ? total : proposal.receipt.total)}</b>
-            </p>
-          )}
           {!!adjustment && (
             <label>
               Ajuste de {money(adjustment)}
@@ -446,22 +428,22 @@ function ProposalCard({
               </select>
             </label>
           )}
-          {!proposal.status && validTotal && difference !== 0 && (
-            <>
-              <p className="error">
-                Queda una diferencia de {money(Math.abs(difference))}. Revisá
-                las líneas y el total. Si la diferencia corresponde a un
-                descuento o cargo del comprobante, podés registrarla como
-                ajuste.
+          {!proposal.status && hasDifference && (
+            <div className="receipt-note">
+              <p className="muted">
+                La lectura de la imagen difiere de los movimientos. Revisá los
+                importes antes de confirmar.
               </p>
-              <button
-                className="secondary"
-                disabled={busy}
-                onClick={() => setAdjustment(total - totals.ARS)}
-              >
-                Aplicar ajuste de {money(total - totals.ARS)}
-              </button>
-            </>
+              {detectedTotal !== undefined && (
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => setAdjustment(detectedTotal - totals.ARS)}
+                >
+                  Aplicar diferencia como ajuste
+                </button>
+              )}
+            </div>
           )}
           {!proposal.status && !!adjustment && (
             <button
@@ -472,8 +454,10 @@ function ProposalCard({
               Quitar ajuste
             </button>
           )}
-          {!proposal.status && !validTotal && (
-            <p className="error">Ingresá un total válido en Editar.</p>
+          {!proposal.status && !validReceipt && (
+            <p className="error">
+              El total a registrar debe ser positivo y estar en ARS.
+            </p>
           )}
           {proposal.receipt.warnings.map((w, i) => (
             <p className="error" key={i}>
@@ -497,7 +481,7 @@ function ProposalCard({
             className="primary"
             disabled={
               busy ||
-              !match ||
+              !validReceipt ||
               categoriesMissing ||
               items.some((e) => !e.date || e.amount <= 0)
             }
