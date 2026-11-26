@@ -1,4 +1,4 @@
-import { asVercel } from "../server/vercel";
+import { asVercel } from "../server/vercel.js";
 export const config = { maxDuration: 30 };
 export async function handler(request: Request) {
   const target = process.env.SUPABASE_URL;

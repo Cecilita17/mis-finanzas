@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { asVercel } from "../server/vercel";
+import { asVercel } from "../server/vercel.js";
 import sharp from "sharp";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -19,7 +19,7 @@ import {
   type Ledger,
   type Message,
   type Proposal,
-} from "../src/model";
+} from "../src/model.js";
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
