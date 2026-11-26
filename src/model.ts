@@ -141,6 +141,80 @@ export const initial: Ledger = {
   paid: [],
   receipts: {},
 };
+const guestTemplates = [
+  {
+    id: "guest-food",
+    name: "Comida",
+    icon: "utensils",
+    color: "sage",
+    kind: "variable",
+  },
+  {
+    id: "guest-card",
+    name: "Tarjeta de crédito",
+    icon: "card",
+    color: "lavender",
+    kind: "fixed",
+  },
+  {
+    id: "guest-clothes",
+    name: "Ropa",
+    icon: "bag",
+    color: "rose",
+    kind: "variable",
+  },
+  {
+    id: "guest-rent",
+    name: "Alquiler",
+    icon: "home",
+    color: "yellow",
+    kind: "fixed",
+  },
+  {
+    id: "guest-leisure",
+    name: "Ocio",
+    icon: "play",
+    color: "lavender",
+    kind: "variable",
+  },
+  {
+    id: "guest-health",
+    name: "Salud",
+    icon: "heart",
+    color: "mint",
+    kind: "variable",
+  },
+  {
+    id: "guest-transport",
+    name: "Transporte",
+    icon: "bus",
+    color: "blue",
+    kind: "variable",
+  },
+  {
+    id: "guest-empty",
+    name: "Sin saldo",
+    icon: "tag",
+    color: "sage",
+    kind: "variable",
+  },
+] as const;
+
+export function guestLedger(): Ledger {
+  return {
+    ...initial,
+    budget: 0,
+    categories: guestTemplates.map((template) => ({
+      ...template,
+      amount: 0,
+      currency: "ARS",
+      group: "",
+      period: "monthly",
+      redistribute: true,
+      archived: false,
+    })),
+  };
+}
 export function today() {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "America/Argentina/Cordoba",

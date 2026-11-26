@@ -1,6 +1,6 @@
 # Mis Finanzas
 
-Organizador de finanzas personales en español rioplatense. La interfaz móvil se inspira en la maqueta y se adapta a tablet y escritorio. Arranca con $1.600.000 ARS de presupuesto, 13 categorías, el grupo Alimentación y cero movimientos. USD 40 de suscripciones se estima inicialmente a $84.760 ARS.
+Organizador de finanzas personales en español rioplatense. La interfaz móvil se inspira en la maqueta y se adapta a tablet y escritorio. Sin iniciar sesión se muestran ocho categorías de ejemplo y un saldo de $0. El presupuesto de ejemplo de las cuentas usa $1.600.000 ARS, 13 categorías, el grupo Alimentación y cero movimientos. USD 40 de suscripciones se estima inicialmente a $84.760 ARS.
 
 ## Ejecutar
 
@@ -14,7 +14,7 @@ npm run typecheck
 npm run build
 ```
 
-Sin variables de entorno se puede recorrer la interfaz y consultar el presupuesto inicial. Guardar gastos, editar datos y usar el asistente requieren una cuenta autenticada. Vite expone los mismos handlers de API durante el desarrollo.
+Sin variables de entorno se puede recorrer la vista de invitado con saldo cero. Guardar gastos, editar datos y usar el asistente requieren una cuenta autenticada. Vite expone los mismos handlers de API durante el desarrollo.
 
 ## Conectar los servicios
 

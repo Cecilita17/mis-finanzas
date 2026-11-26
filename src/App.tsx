@@ -48,6 +48,7 @@ import {
   categoryLimit,
   cents,
   days,
+  guestLedger,
   money as formatMoney,
   monthLabel,
   obligations,
@@ -63,7 +64,7 @@ import {
   type Ledger,
   type Rule,
 } from "./model";
-import { db, initialLedger, mutateLedger, readLedger } from "./store";
+import { db, mutateLedger, readLedger } from "./store";
 import { colors, icons } from "./icons";
 import Assistant from "./Assistant";
 
@@ -171,7 +172,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [month, setMonth] = useState(today().slice(0, 7));
   const [session, setSession] = useState<Session | null>(null);
-  const [data, setData] = useState<Ledger>(initialLedger);
+  const [data, setData] = useState<Ledger>(guestLedger);
   const [modal, setModal] = useState<Modal>(null);
   const [budgetCurrency, setBudgetCurrency] = useState<Currency>("ARS");
   const [category, setCategory] = useState<Category | null>(null);
@@ -204,7 +205,7 @@ export default function App() {
   const userId = session?.user.id;
   useEffect(() => {
     if (!userId) {
-      setData(initialLedger());
+      setData(guestLedger());
       return;
     }
     let active = true;
