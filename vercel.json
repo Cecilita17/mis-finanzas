@@ -1,0 +1,12 @@
+{
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/backend/:path*", "destination": "/api/supabase?_path=:path*" }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    }
+  ]
+}
