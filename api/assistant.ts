@@ -165,6 +165,12 @@ const input = z.discriminatedUnion("action", [
     id,
     items: z.array(confirmItem).max(100),
     adjustmentCategory: z.string().max(64).optional(),
+    receiptReview: z
+      .object({
+        total: cents.positive(),
+        adjustment: z.number().int().min(-100_000_000_000).max(100_000_000_000),
+      })
+      .optional(),
   }),
 ]);
 const fail = (message: string, status = 400) =>
@@ -248,6 +254,9 @@ export async function handler(request: Request) {
           throw new Error("La propuesta no pudo verificarse.");
         if (proposal.status === "saved") return data;
         const receipt = proposal.receipt;
+        if (body.receiptReview && !receipt)
+          throw new Error("Solo se puede conciliar un comprobante.");
+        const reviewed = body.receiptReview ?? receipt;
         if (
           receipt &&
           (data.receipts[receipt.hash] ||
@@ -272,10 +281,10 @@ export async function handler(request: Request) {
         if (receipt && body.items.some((e) => e.currency !== "ARS"))
           throw new Error("Los productos del ticket deben estar en ARS.");
         if (
-          receipt &&
+          reviewed &&
           body.items.reduce((sum, e) => sum + e.amount, 0) +
-            receipt.adjustment !==
-            receipt.total
+            reviewed.adjustment !==
+            reviewed.total
         )
           throw new Error(
             "Los productos y ajustes deben sumar el total del ticket.",
@@ -286,7 +295,7 @@ export async function handler(request: Request) {
           rate: settings(data, e.date.slice(0, 7)).rate,
           receipt: receipt?.path,
         }));
-        if (receipt?.adjustment) {
+        if (reviewed?.adjustment) {
           const category = body.adjustmentCategory || expenses[0]?.category;
           if (!category || !validCategories.has(category) || !expenses.length)
             throw new Error("Elegí la categoría del ajuste.");
@@ -294,7 +303,7 @@ export async function handler(request: Request) {
           expenses.push({
             ...first,
             id: proposal.id + "-ajuste",
-            amount: receipt.adjustment,
+            amount: reviewed.adjustment,
             description: "Ajuste del ticket",
             category,
           });
@@ -326,7 +335,15 @@ export async function handler(request: Request) {
             : data.receipts,
           messages: data.messages.map((m) =>
             m.id === message.id
-              ? { ...m, proposal: { ...proposal, status: "saved" } }
+              ? {
+                  ...m,
+                  proposal: {
+                    ...proposal,
+                    confirmedItems: expenses.slice(0, body.items.length),
+                    receiptReview: body.receiptReview,
+                    status: "saved",
+                  },
+                }
               : m,
           ),
         };

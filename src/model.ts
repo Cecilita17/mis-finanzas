@@ -46,6 +46,7 @@ export type Reserve = {
   amount: number;
   description: string;
 };
+export type ReceiptReview = { total: number; adjustment: number };
 export type Proposal = {
   id: string;
   items: Expense[];
@@ -58,6 +59,8 @@ export type Proposal = {
     adjustment: number;
     warnings: string[];
   };
+  confirmedItems?: Expense[];
+  receiptReview?: ReceiptReview;
   signature?: string;
   status?: "saved" | "discarded";
 };

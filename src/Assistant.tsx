@@ -17,6 +17,7 @@ import {
   type Expense,
   type Ledger,
   type Proposal,
+  type ReceiptReview,
 } from "./model";
 type Props = {
   data: Ledger;
@@ -160,13 +161,14 @@ export default function Assistant({
                 proposal={m.proposal}
                 data={data}
                 busy={busy}
-                confirm={(items, adjustmentCategory) =>
+                confirm={(items, adjustmentCategory, receiptReview) =>
                   void run(async () => {
                     await call({
                       action: "confirm",
                       id: m.proposal!.id,
                       items,
                       adjustmentCategory,
+                      receiptReview,
                     });
                     await refresh();
                     notify("Cambios guardados.");
@@ -266,20 +268,40 @@ function ProposalCard({
   proposal: Proposal;
   data: Ledger;
   busy: boolean;
-  confirm: (items: Expense[], adjustmentCategory: string) => void;
+  confirm: (
+    items: Expense[],
+    adjustmentCategory: string,
+    receiptReview?: ReceiptReview,
+  ) => void;
   discard: () => void;
 }) {
-  const [items, setItems] = useState(proposal.items);
+  const [draftItems, setItems] = useState(proposal.items);
+  const items = proposal.confirmedItems ?? draftItems;
+  const [totalInput, setTotalInput] = useState(() =>
+    amountInput(proposal.receipt?.total ?? 0),
+  );
+  const [draftAdjustment, setAdjustment] = useState(
+    proposal.receipt?.adjustment ?? 0,
+  );
   const [editing, setEditing] = useState(false);
   const [adjustmentCategory, setAdjustmentCategory] = useState("");
   const totals = items.reduce(
     (a, i) => ({ ...a, [i.currency]: a[i.currency] + i.amount }),
     { ARS: 0, USD: 0 },
   );
+  const cats = data.categories.filter((c) => !c.archived);
+  const categoriesMissing = items.some(
+    (e) => !cats.some((c) => c.id === e.category),
+  );
+  const total = proposal.receiptReview?.total ?? cents(totalInput);
+  const adjustment = proposal.receiptReview?.adjustment ?? draftAdjustment;
+  const difference = total - totals.ARS - adjustment;
+  const validTotal = Number.isSafeInteger(total) && total > 0;
   const match =
     !proposal.receipt ||
-    totals.ARS + proposal.receipt.adjustment === proposal.receipt.total;
-  const cats = data.categories.filter((c) => !c.archived);
+    (validTotal &&
+      !difference &&
+      items.every((item) => item.currency === "ARS"));
   const edit = (index: number, patch: Partial<Expense>) =>
     setItems((values) =>
       values.map((item, i) => (index === i ? { ...item, ...patch } : item)),
@@ -392,12 +414,24 @@ function ProposalCard({
       )}
       {proposal.receipt && (
         <>
-          <p className="proposal-total">
-            Total del ticket <b>{money(proposal.receipt.total)}</b>
-          </p>
-          {!!proposal.receipt.adjustment && (
+          {editing && !proposal.status ? (
             <label>
-              Ajuste de {money(proposal.receipt.adjustment)}
+              Total del comprobante (ARS)
+              <input
+                inputMode="decimal"
+                value={totalInput}
+                onChange={(e) => setTotalInput(e.target.value)}
+              />
+            </label>
+          ) : (
+            <p className="proposal-total">
+              Total del ticket{" "}
+              <b>{money(validTotal ? total : proposal.receipt.total)}</b>
+            </p>
+          )}
+          {!!adjustment && (
+            <label>
+              Ajuste de {money(adjustment)}
               <select
                 value={adjustmentCategory}
                 onChange={(e) => setAdjustmentCategory(e.target.value)}
@@ -412,11 +446,34 @@ function ProposalCard({
               </select>
             </label>
           )}
-          {!match && (
-            <p className="error">
-              Revisá los importes. Los productos y ajustes deben sumar el total
-              del ticket.
-            </p>
+          {!proposal.status && validTotal && difference !== 0 && (
+            <>
+              <p className="error">
+                Queda una diferencia de {money(Math.abs(difference))}. Revisá
+                las líneas y el total. Si la diferencia corresponde a un
+                descuento o cargo del comprobante, podés registrarla como
+                ajuste.
+              </p>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => setAdjustment(total - totals.ARS)}
+              >
+                Aplicar ajuste de {money(total - totals.ARS)}
+              </button>
+            </>
+          )}
+          {!proposal.status && !!adjustment && (
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={() => setAdjustment(0)}
+            >
+              Quitar ajuste
+            </button>
+          )}
+          {!proposal.status && !validTotal && (
+            <p className="error">Ingresá un total válido en Editar.</p>
           )}
           {proposal.receipt.warnings.map((w, i) => (
             <p className="error" key={i}>
@@ -424,6 +481,11 @@ function ProposalCard({
             </p>
           ))}
         </>
+      )}
+      {!proposal.status && categoriesMissing && (
+        <p className="error">
+          Elegí una categoría para cada movimiento en Editar.
+        </p>
       )}
       {proposal.status ? (
         <p className="status">
@@ -436,9 +498,16 @@ function ProposalCard({
             disabled={
               busy ||
               !match ||
-              items.some((e) => !e.category || !e.date || e.amount <= 0)
+              categoriesMissing ||
+              items.some((e) => !e.date || e.amount <= 0)
             }
-            onClick={() => confirm(items, adjustmentCategory)}
+            onClick={() =>
+              confirm(
+                items,
+                adjustmentCategory,
+                proposal.receipt ? { total, adjustment } : undefined,
+              )
+            }
           >
             <Check size={16} /> Confirmar
           </button>

@@ -120,41 +120,60 @@ test("valida en backend propuestas de Groq, confirmaciones y tickets duplicados"
       text: "Ticket identificado.",
       items: [
         {
-          ...movement("12", 250000, "Detergente"),
+          ...movement("", 5_166_125, "Compra"),
           quantity: 2,
           discount: 10000,
         },
-        movement("4", 1500000, "Pañales"),
+        movement("", 4_500_000, "Transferencia"),
       ],
       receipt: {
-        total: 1740000,
-        adjustment: -10000,
+        total: 8_577_125,
+        adjustment: 0,
         warnings: ["Revisá el descuento global."],
       },
     };
     const receipt = await proposal({ text: "", hash, path });
     assert.equal(receipt.items[0].discount, 10000);
+    const reviewedItems = receipt.items.map((item, index) => ({
+      ...item,
+      category: index === 0 ? "12" : "4",
+    }));
+    const confirmReceipt = (
+      items: Expense[],
+      receiptReview?: { total: number; adjustment: number },
+    ) =>
+      call({
+        action: "confirm",
+        id: receipt.id,
+        items,
+        receiptReview,
+        adjustmentCategory: "12",
+      });
+    const reviewed = { total: 8_577_125, adjustment: -1_089_000 };
+    assert.equal((await confirmReceipt(reviewedItems)).status, 422);
+    assert.equal((await confirmReceipt(receipt.items, reviewed)).status, 422);
     assert.equal(
-      (
-        await call({
-          action: "confirm",
-          id: receipt.id,
-          items: receipt.items.map((e, i) => (i ? e : { ...e, amount: 1 })),
-        })
-      ).status,
+      (await confirmReceipt(reviewedItems, { ...reviewed, adjustment: -1 }))
+        .status,
       422,
     );
+    assert.equal((await confirmReceipt(reviewedItems, reviewed)).status, 200);
+    assert.equal((await confirmReceipt(reviewedItems, reviewed)).status, 200);
+    const recorded = ledger.expenses.filter((e) => e.receipt === path);
+    assert.equal(recorded.length, 3);
     assert.equal(
-      (await call({ action: "confirm", id: receipt.id, items: receipt.items }))
-        .status,
-      200,
+      recorded.reduce((sum, e) => sum + e.amount, 0),
+      8_577_125,
     );
     assert.equal(
-      ledger.expenses
-        .filter((e) => e.receipt === path)
-        .reduce((sum, e) => sum + e.amount, 0),
-      1_740_000,
+      recorded.find((e) => e.id.endsWith("-ajuste"))?.category,
+      "12",
     );
+    const saved = ledger.messages.find(
+      (m) => m.proposal?.id === receipt.id,
+    )?.proposal;
+    assert.deepEqual(saved?.receiptReview, reviewed);
+    assert.equal(saved?.confirmedItems?.[0].category, "12");
     assert.equal(
       (await call({ action: "ask", text: "", hash, path })).status,
       409,
