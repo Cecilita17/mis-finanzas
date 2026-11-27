@@ -4,6 +4,8 @@ const cookie = "__Host-mp-pkce";
 const options = "Path=/; Secure; HttpOnly; SameSite=Lax";
 const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 const redirectUri = "https://mis-finanzas-ten-ecru.vercel.app/api/mercadopago/callback";
+const withdrawals = "https://api.mercadopago.com/v1/reporting/operations/activities_withdraw";
+const reportIdPattern = /^[a-zA-Z0-9_-]{1,80}$/;
 const random = () => randomBytes(32).toString("base64url");
 
 function sign(value: string, secret: string) {
@@ -36,7 +38,11 @@ export async function mercadoPago(request: Request) {
     if (!admin.ok || await admin.json() !== true) return error(403);
     const state = random();
     const verifier = random();
-    const mode = url.searchParams.get("report") === "create" ? "create" : "list";
+    const selection = url.searchParams.get("report");
+    const id = url.searchParams.get("uid") ?? "";
+    if (selection === "withdraw-check" && !reportIdPattern.test(id)) return error(400);
+    const mode = selection === "withdraw-check" ? "withdraw-check:" + id :
+      selection === "withdraw-create" || selection === "create" ? selection : "list";
     const value = `${state}.${verifier}.${Date.now()}.${mode}`;
     const authorize = new URL("https://auth.mercadopago.com.ar/authorization");
     authorize.search = new URLSearchParams({
@@ -50,7 +56,7 @@ export async function mercadoPago(request: Request) {
   }
 
   const raw = request.headers.get("Cookie")?.split(/;\s*/).find(part => part.startsWith(cookie + "="))?.slice(cookie.length + 1);
-  const match = /^([\w-]{43})\.([\w-]{43})\.(\d{13})\.(create|list)\.([a-f0-9]{64})$/.exec(raw ?? "");
+  const match = /^([\w-]{43})\.([\w-]{43})\.(\d{13})\.(create|list|withdraw-create|withdraw-check:[\w-]{1,80})\.([a-f0-9]{64})$/.exec(raw ?? "");
   if (!match) return finish("error");
   const [, state, verifier, issued, mode, signature] = match;
   const age = Date.now() - Number(issued);
@@ -72,13 +78,62 @@ export async function mercadoPago(request: Request) {
     if (!token.ok) return finish("token");
     const { access_token: accessToken } = await token.json();
     if (typeof accessToken !== "string" || !accessToken) return finish("token");
-    if (mode === "create") {
+    const mpHeaders = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+    const rejected = (stage: string, response: Response) =>
+      finish(`retiros-error&mp-etapa=${stage}&mp-http=${response.status}`);
+    if (mode.startsWith("withdraw-check:")) {
+      const id = mode.slice("withdraw-check:".length);
+      const report = await fetch(`${withdrawals}/statements/${id}`, {
+        headers: mpHeaders,
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!report.ok) return rejected("consulta", report);
+      const { status } = await report.json();
+      if (["pending", "available", "failed", "empty"].includes(status)) return finish("retiros-" + status);
+      return finish("retiros-desconocido");
+    }
+    if (mode === "create" || mode === "withdraw-create") {
       const today = new Intl.DateTimeFormat("sv-SE", {
         timeZone: "America/Argentina/Cordoba",
       }).format(new Date());
       const midnight = Date.parse(today + "T00:00:00-03:00");
       const end = new Date(midnight - 1000);
       const begin = new Date(midnight - 7 * 86_400_000);
+      if (mode === "withdraw-create") {
+        const config = await fetch(withdrawals + "/config", {
+          headers: mpHeaders,
+          signal: AbortSignal.timeout(6000),
+        });
+        if (config.status === 404) {
+          const setup = await fetch(withdrawals + "/config", {
+            method: "POST",
+            headers: mpHeaders,
+            body: JSON.stringify({
+              structure: {
+                name: "Mis Finanzas",
+                columns: ["date_created", "operation_id", "status", "operation_type", "transaction_amount"].map(key => ({ key })),
+              },
+              notifiers: [{ type: "internal_sftp", data: {} }],
+            }),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!setup.ok) return rejected("configuracion", setup);
+        } else if (!config.ok) {
+          return rejected("configuracion", config);
+        }
+        const report = await fetch(withdrawals + "/statements", {
+          method: "POST",
+          headers: mpHeaders,
+          body: JSON.stringify({
+            filters: { creation_date: { range: { gte: begin.toISOString(), lte: end.toISOString() } } },
+          }),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!report.ok) return rejected("generacion", report);
+        const { record_id: id } = await report.json();
+        if (typeof id !== "string" || !reportIdPattern.test(id)) return finish("retiros-desconocido");
+        return finish("retiros-solicitado&mp-uid=" + id);
+      }
       const report = await fetch("https://api.mercadopago.com/v1/account/settlement_report", {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },

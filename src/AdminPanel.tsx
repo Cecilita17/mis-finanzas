@@ -28,16 +28,36 @@ const results: Record<string, string> = {
   "sin-acceso": "Autorización exitosa. La API no devolvió una lista de reportes utilizable.",
   solicitado: "Mercado Pago recibió la solicitud. Cuando termine de generar el reporte, usá Consultar reportes.",
   "reporte-error": "Mercado Pago no aceptó la solicitud de reporte.",
+  "retiros-solicitado": "Mercado Pago recibió la solicitud. Consultá el estado después de unos minutos.",
+  "retiros-pending": "Mercado Pago está preparando el reporte.",
+  "retiros-available": "El reporte de retiros y transferencias está disponible en Mercado Pago.",
+  "retiros-failed": "Mercado Pago no pudo preparar el reporte.",
+  "retiros-empty": "Mercado Pago no encontró operaciones para esos siete días.",
+  "retiros-desconocido": "Mercado Pago devolvió una respuesta que no pude interpretar.",
   token: "Mercado Pago rechazó el intercambio de la autorización.",
   error: "La autorización no se completó. Volvé a iniciar la prueba.",
 };
 
 export default function AdminPanel() {
+  const [reportId] = useState(() => {
+    const incoming = new URLSearchParams(window.location.search).get("mp-uid");
+    const previous = window.sessionStorage.getItem("mp-withdraw-probe-id");
+    const id = incoming ?? previous ?? "";
+    return /^[a-zA-Z0-9_-]{1,80}$/.test(id) ? id : "";
+  });
+  useEffect(() => {
+    if (reportId) window.sessionStorage.setItem("mp-withdraw-probe-id", reportId);
+  }, [reportId]);
   const [probe, setProbe] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("mp-prueba");
     const http = params.get("mp-http") ?? "";
     const code = params.get("mp-codigo") ?? "";
+    const stage = params.get("mp-etapa");
+    if (status === "retiros-error" && /^[45]\d{2}$/.test(http)) {
+      const step = stage === "configuracion" ? "configuración" : stage === "generacion" ? "generación" : "consulta";
+      return `Mercado Pago rechazó la ${step} del reporte de retiros (HTTP ${http}).`;
+    }
     if (status === "reporte-error" && /^[45]\d{2}$/.test(http)) {
       return `Mercado Pago rechazó el reporte (HTTP ${http}${/^[a-z][a-z0-9_]{0,63}$/.test(code) ? ", " + code : ""}).`;
     }
@@ -45,13 +65,15 @@ export default function AdminPanel() {
   });
   const [probing, setProbing] = useState(false);
 
-  async function connectMercadoPago(mode: "create" | "list") {
+  async function connectMercadoPago(mode: "create" | "list" | "withdraw-create" | "withdraw-check") {
     setProbing(true);
     setProbe("");
     try {
       const { data } = await db!.auth.getSession();
       if (!data.session) throw new Error();
-      const response = await fetch(`/api/mercadopago/start?report=${mode}`, {
+      const query = new URLSearchParams({ report: mode });
+      if (mode === "withdraw-check") query.set("uid", reportId);
+      const response = await fetch(`/api/mercadopago/start?${query}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${data.session.access_token}` },
       });
@@ -115,6 +137,16 @@ export default function AdminPanel() {
           Generar reporte de los últimos 7 días
         </button>
         <p>Mercado Pago pedirá autorización. Se muestran los resultados de la prueba de reportes.</p>
+        <h2>Retiros y transferencias salientes</h2>
+        <p>Prueba de los últimos siete días completos. Mercado Pago puede requerir crear una configuración de reporte.</p>
+        <button className="primary" type="button" disabled={probing} onClick={() => void connectMercadoPago("withdraw-create")}>
+          Generar reporte de transferencias
+        </button>
+        {reportId && (
+          <button className="secondary" type="button" disabled={probing} onClick={() => void connectMercadoPago("withdraw-check")}>
+            Consultar estado del reporte
+          </button>
+        )}
         {probe && <p role="status">{probe}</p>}
       </div>
       <div className="metrics">
