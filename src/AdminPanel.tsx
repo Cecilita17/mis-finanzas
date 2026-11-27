@@ -67,7 +67,8 @@ export default function AdminPanel() {
       const detail = http === "401" || http === "403"
         ? " El acceso a la API de reportes fue denegado. El acceso de producción debe corresponder a la cuenta que autorizaste."
         : "";
-      return `Mercado Pago respondió ${step} (HTTP ${http}${hint.length ? ", " + hint.join(", ") : ""}).${detail}`;
+      const message = (params.get("mp-detalle") ?? "").replace(/[^\p{L}\p{N} .,:;'"()[\]/_=<>|#-]/gu, " ").slice(0, 480);
+      return `Mercado Pago respondió ${step} (HTTP ${http}${hint.length ? ", " + hint.join(", ") : ""}).${detail}${message ? " Mensaje de Mercado Pago: " + message : ""}`;
     }
     if (status === "reporte-error" && /^[45]\d{2}$/.test(http)) {
       return `Mercado Pago rechazó el reporte (HTTP ${http}${/^[a-z][a-z0-9_]{0,63}$/.test(code) ? ", " + code : ""}).`;
