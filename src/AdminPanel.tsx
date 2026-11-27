@@ -56,7 +56,10 @@ export default function AdminPanel() {
     const stage = params.get("mp-etapa");
     if (status === "retiros-error" && /^[45]\d{2}$/.test(http)) {
       const step = stage === "configuracion" ? "configuración" : stage === "generacion" ? "generación" : "consulta";
-      return `Mercado Pago rechazó la ${step} del reporte de retiros (HTTP ${http}).`;
+      const detail = http === "401" || http === "403"
+        ? " El acceso a la API de reportes fue denegado. El acceso de producción debe corresponder a la cuenta que autorizaste."
+        : "";
+      return `Mercado Pago rechazó la ${step} del reporte de retiros (HTTP ${http}).${detail}`;
     }
     if (status === "reporte-error" && /^[45]\d{2}$/.test(http)) {
       return `Mercado Pago rechazó el reporte (HTTP ${http}${/^[a-z][a-z0-9_]{0,63}$/.test(code) ? ", " + code : ""}).`;

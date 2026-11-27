@@ -231,6 +231,11 @@ export default function App() {
   const userId = session?.user.id;
   const isAdmin = !!userId && adminId === userId;
   useEffect(() => {
+    if (isAdmin && new URLSearchParams(window.location.search).has("mp-prueba")) {
+      setPage("admin");
+    }
+  }, [isAdmin]);
+  useEffect(() => {
     if (!userId || !db) return;
     let active = true;
     void db.rpc("is_finance_admin").then(({ data }) => {

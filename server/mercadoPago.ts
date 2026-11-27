@@ -76,14 +76,35 @@ export async function mercadoPago(request: Request) {
       signal: AbortSignal.timeout(8000),
     });
     if (!token.ok) return finish("token");
-    const { access_token: accessToken } = await token.json();
+    const { access_token: accessToken, user_id: authorizedId } = await token.json();
     if (typeof accessToken !== "string" || !accessToken) return finish("token");
     const mpHeaders = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+    const productionToken = process.env.MERCADOPAGO_REPORTS_ACCESS_TOKEN;
+    let verifiedProductionToken: string | null | undefined;
+    async function withdrawalRequest(path: string, init: RequestInit) {
+      const response = await fetch(withdrawals + path, { ...init, headers: mpHeaders });
+      if (![401, 403].includes(response.status) || !productionToken ||
+          !/^\d+$/.test(String(authorizedId ?? ""))) return response;
+      if (verifiedProductionToken === undefined) {
+        const owner = await fetch("https://api.mercadopago.com/users/me", {
+          headers: { Authorization: `Bearer ${productionToken}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        const info = owner.ok ? await owner.json().catch(() => null) : null;
+        verifiedProductionToken = String(info?.id ?? "") === String(authorizedId) ? productionToken : null;
+      }
+      if (!verifiedProductionToken) return response;
+      return fetch(withdrawals + path, {
+        ...init,
+        headers: { ...mpHeaders, Authorization: `Bearer ${verifiedProductionToken}` },
+        signal: AbortSignal.timeout(6000),
+      });
+    }
     const rejected = (stage: string, response: Response) =>
       finish(`retiros-error&mp-etapa=${stage}&mp-http=${response.status}`);
     if (mode.startsWith("withdraw-check:")) {
       const id = mode.slice("withdraw-check:".length);
-      const report = await fetch(`${withdrawals}/statements/${id}`, {
+      const report = await withdrawalRequest(`/statements/${id}`, {
         headers: mpHeaders,
         signal: AbortSignal.timeout(6000),
       });
@@ -100,12 +121,12 @@ export async function mercadoPago(request: Request) {
       const end = new Date(midnight - 1000);
       const begin = new Date(midnight - 7 * 86_400_000);
       if (mode === "withdraw-create") {
-        const config = await fetch(withdrawals + "/config", {
+        const config = await withdrawalRequest("/config", {
           headers: mpHeaders,
           signal: AbortSignal.timeout(6000),
         });
         if (config.status === 404) {
-          const setup = await fetch(withdrawals + "/config", {
+          const setup = await withdrawalRequest("/config", {
             method: "POST",
             headers: mpHeaders,
             body: JSON.stringify({
@@ -121,7 +142,7 @@ export async function mercadoPago(request: Request) {
         } else if (!config.ok) {
           return rejected("configuracion", config);
         }
-        const report = await fetch(withdrawals + "/statements", {
+        const report = await withdrawalRequest("/statements", {
           method: "POST",
           headers: mpHeaders,
           body: JSON.stringify({
