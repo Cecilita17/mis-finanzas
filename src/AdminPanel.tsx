@@ -22,7 +22,46 @@ const date = new Intl.DateTimeFormat("es-AR", {
   timeStyle: "short",
 });
 
+const results: Record<string, string> = {
+  "con-reportes": "Autorización exitosa. Mercado Pago permite ver la lista de reportes existentes.",
+  "sin-reportes": "Autorización exitosa. Mercado Pago devolvió una lista vacía de reportes.",
+  "sin-acceso": "Autorización exitosa. La API no devolvió una lista de reportes utilizable.",
+  token: "Mercado Pago rechazó el intercambio de la autorización.",
+  error: "La autorización no se completó. Volvé a iniciar la prueba.",
+};
+
 export default function AdminPanel() {
+  const [probe, setProbe] = useState(() => {
+    const status = new URLSearchParams(window.location.search).get("mp-prueba");
+    return status ? results[status] ?? "" : "";
+  });
+  const [probing, setProbing] = useState(false);
+
+  async function connectMercadoPago() {
+    setProbing(true);
+    setProbe("");
+    try {
+      const { data } = await db!.auth.getSession();
+      if (!data.session) throw new Error();
+      const response = await fetch("/api/mercadopago/start", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      });
+      if (response.status === 503) {
+        setProbe("Las credenciales de Mercado Pago todavía no están disponibles en este despliegue.");
+        return;
+      }
+      if (!response.ok) throw new Error();
+      const target = new URL((await response.json()).url);
+      if (target.origin !== "https://auth.mercadopago.com.ar") throw new Error();
+      window.location.assign(target.href);
+    } catch {
+      setProbe("No se pudo iniciar la prueba con Mercado Pago.");
+    } finally {
+      setProbing(false);
+    }
+  }
+
   const [offset, setOffset] = useState(0);
   const [result, setResult] = useState<Overview | null>(null);
   const [error, setError] = useState(false);
@@ -60,6 +99,13 @@ export default function AdminPanel() {
 
   return (
     <section className="card inner-card" aria-label="Usuarios registrados">
+      <div>
+        <button type="button" disabled={probing} onClick={connectMercadoPago}>
+          {probing ? "Abriendo Mercado Pago…" : "Conectar Mercado Pago · Prueba"}
+        </button>
+        <p>Prueba de autorización y acceso a reportes. No se guardan credenciales ni movimientos.</p>
+        {probe && <p role="status">{probe}</p>}
+      </div>
       <div className="metrics">
         <div>
           <small>Registrados</small>
