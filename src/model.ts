@@ -50,6 +50,12 @@ export type Reserve = {
   amount: number;
   description: string;
 };
+export type Income = {
+  id: string;
+  date: string;
+  amount: number;
+  description: string;
+};
 export type ReceiptReview = { total: number; adjustment: number };
 export type Proposal = {
   id: string;
@@ -79,6 +85,7 @@ export type Ledger = {
   expenses: Expense[];
   rules: Rule[];
   reserves: Reserve[];
+  incomes?: Income[];
   messages: Message[];
   budget: number;
   rate: number;
@@ -382,6 +389,10 @@ export function changeBaseCurrency(data: Ledger, baseCurrency: Currency) {
       ...r,
       amount: convert(r.amount, settings(data, r.date.slice(0, 7))),
     })),
+    incomes: (data.incomes ?? []).map((r) => ({
+      ...r,
+      amount: convert(r.amount, settings(data, r.date.slice(0, 7))),
+    })),
   };
 }
 export function fxInput(raw: string) {
@@ -530,6 +541,28 @@ export function summary(data: Ledger, month: string, date = today()) {
     left,
     daily: left ? Math.max(0, Math.floor(free / left)) : 0,
   };
+}
+// Ingresos reales del mes y saldo en mano. Lo que sobra de un mes pasa al
+// siguiente. Se cuenta desde el mes del primer ingreso registrado, para que los
+// gastos anteriores a empezar a cargar ingresos no generen un saldo negativo.
+export function cashflow(data: Ledger, month: string) {
+  const incomes = data.incomes ?? [];
+  const start = incomes.map((i) => i.date.slice(0, 7)).sort()[0];
+  if (!start || month < start)
+    return { tracked: !!start, received: 0, carry: 0, inHand: 0 };
+  const received = incomes
+    .filter((i) => i.date.startsWith(month))
+    .reduce((sum, i) => sum + i.amount, 0);
+  const before = (date: string) => date.slice(0, 7) >= start && date.slice(0, 7) < month;
+  const carry =
+    incomes.filter((i) => before(i.date)).reduce((sum, i) => sum + i.amount, 0) -
+    data.expenses
+      .filter((e) => before(e.date))
+      .reduce((sum, e) => sum + expenseValue(data, e), 0);
+  const spent = data.expenses
+    .filter((e) => e.date.startsWith(month))
+    .reduce((sum, e) => sum + expenseValue(data, e), 0);
+  return { tracked: true, received, carry, inHand: carry + received - spent };
 }
 export function reserveBalance(data: Ledger, month: string) {
   const start = Object.keys(data.months).sort()[0];

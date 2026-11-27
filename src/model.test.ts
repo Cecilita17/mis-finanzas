@@ -185,3 +185,26 @@ test("convierte USD y NZD con cuatro decimales y mantiene la cotización registr
   assert.match(money(500, "NZD"), /NZD/);
   assert.match(money(500, "USD"), /USD/);
 });
+
+test("los ingresos se acumulan y lo que sobra pasa al mes siguiente", async () => {
+  const { cashflow, initial } = await import("./model");
+  const expense = (date: string, amount: number) => ({
+    id: date + amount, amount, currency: "ARS" as const, rate: 100, category: "1",
+    date, description: "", merchant: "", method: "Efectivo",
+  });
+  const data = {
+    ...initial,
+    incomes: [
+      { id: "a", date: "2026-10-05", amount: 100_000_00, description: "parte 1" },
+      { id: "b", date: "2026-10-20", amount: 50_000_00, description: "parte 2" },
+      { id: "c", date: "2026-11-03", amount: 30_000_00, description: "transferencia" },
+    ],
+    expenses: [expense("2026-09-10", 999_00), expense("2026-10-15", 120_000_00), expense("2026-11-10", 10_000_00)],
+  };
+  assert.deepEqual(cashflow(data, "2026-09"), { tracked: true, received: 0, carry: 0, inHand: 0 });
+  assert.equal(cashflow(data, "2026-10").inHand, 30_000_00);
+  assert.equal(cashflow(data, "2026-11").carry, 30_000_00);
+  assert.equal(cashflow(data, "2026-11").received, 30_000_00);
+  assert.equal(cashflow(data, "2026-11").inHand, 50_000_00);
+  assert.equal(cashflow(initial, "2026-11").tracked, false);
+});

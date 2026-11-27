@@ -36,6 +36,7 @@ import {
 import {
   allocation,
   amountInput,
+  cashflow,
   currencies,
   changeBaseCurrency,
   convertCategoryAllocations,
@@ -80,6 +81,7 @@ type Page =
   | "stats"
   | "rules"
   | "reserve"
+  | "incomes"
   | "detail";
 const nav = [
   { id: "home", label: "Inicio", icon: House },
@@ -103,6 +105,7 @@ type Modal =
   | "delete-account"
   | "rule"
   | "reserve"
+  | "income"
   | null;
 const uid = () => crypto.randomUUID();
 const blankCategory = (): Category => ({
@@ -291,6 +294,7 @@ export default function App() {
   }, []);
 
   const info = summary(data, month);
+  const cash = cashflow(data, month);
   const conf = settings(data, month);
   const baseCurrency = data.baseCurrency ?? "ARS";
   const money = (amount: number, currency: Currency = baseCurrency) =>
@@ -462,6 +466,7 @@ export default function App() {
     stats: "Estadísticas",
     rules: "Pagos pendientes",
     reserve: "Fondo de imprevistos",
+    incomes: "Ingresos",
     detail: selected?.name ?? "Categoría",
   };
   const monthSelector = (
@@ -745,6 +750,7 @@ export default function App() {
                     stats: "Descubrí cómo se mueve tu dinero.",
                     rules: "Planificá tus próximos vencimientos.",
                     reserve: "Separá dinero para los gastos inesperados.",
+                    incomes: "Registrá lo que cobrás y lo que sobra de cada mes.",
                     detail: selected?.group || "Resumen de la categoría",
                   }[page]
                 }
@@ -803,6 +809,25 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  {cash.tracked && (
+                    <div className="budget-footer">
+                      <div>
+                        <ArrowDownLeft size={17} />
+                        <span>Cobrado este mes</span>
+                        <b>{money(cash.received)}</b>
+                      </div>
+                      <div>
+                        <Wallet size={17} />
+                        <span>En mano (con lo que sobró)</span>
+                        <b>{money(cash.inHand)}</b>
+                      </div>
+                      <div>
+                        <Check size={17} />
+                        <span>Podés gastar hoy</span>
+                        <b>{money(Math.max(0, Math.min(cash.inHand, info.remaining)))}</b>
+                      </div>
+                    </div>
+                  )}
                   <div className="budget-footer">
                     <div>
                       <Clock3 size={17} />
@@ -1102,6 +1127,9 @@ export default function App() {
                 <CalendarDays /> Gastos recurrentes y pagos pendientes{" "}
                 <ChevronRight />
               </button>
+              <button onClick={() => go("incomes")}>
+                <ArrowDownLeft /> Ingresos <ChevronRight />
+              </button>
               <button onClick={() => go("reserve")}>
                 <Shield /> Fondo para imprevistos <ChevronRight />
               </button>
@@ -1385,6 +1413,49 @@ export default function App() {
               )}
             </section>
           )}
+          {page === "incomes" && (
+            <section className="card inner-card">
+              {monthSelector}
+              <div className="big-money">{money(cash.received)}</div>
+              <p>
+                Cobrado en el mes. Saldo que viene del mes anterior:{" "}
+                {money(cash.carry)}. En mano ahora: {money(cash.inHand)}.
+              </p>
+              <div className="actions">
+                <button className="primary" onClick={() => open("income")}>
+                  <Plus size={18} /> Registrar ingreso
+                </button>
+              </div>
+              {(data.incomes ?? [])
+                .filter((i) => i.date.startsWith(month))
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .map((i) => (
+                  <div className="movement" key={i.id}>
+                    <div>
+                      <strong>{i.description || "Ingreso"}</strong>
+                      <small>{i.date}</small>
+                    </div>
+                    <b>{money(i.amount)}</b>
+                    <button
+                      className="mini-button"
+                      aria-label="Eliminar ingreso"
+                      onClick={() => {
+                        if (window.confirm("¿Eliminar este ingreso?"))
+                          void action(async () => {
+                            await save((d) => ({
+                              ...d,
+                              incomes: (d.incomes ?? []).filter((x) => x.id !== i.id),
+                            }));
+                            setNotice("Ingreso eliminado.");
+                          });
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+            </section>
+          )}
           {page === "reserve" && (
             <section className="card inner-card">
               <div className="section-heading">
@@ -1551,6 +1622,8 @@ export default function App() {
                       ? "Mi cuenta"
                       : modal === "reserve"
                         ? "Aporte al fondo"
+                        : modal === "income"
+                          ? "Registrar ingreso"
                         : "Presupuesto del mes"
           }
           close={() => setModal(null)}
@@ -2416,6 +2489,48 @@ export default function App() {
                   </button>
                 )}
               </div>
+            </form>
+          )}
+          {modal === "income" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                void action(async () => {
+                  const amount = cents(String(f.get("amount")));
+                  if (!Number.isSafeInteger(amount) || amount <= 0)
+                    throw new Error("Ingresá un importe válido.");
+                  await save((d) => ({
+                    ...d,
+                    incomes: [
+                      ...(d.incomes ?? []),
+                      {
+                        id: uid(),
+                        amount,
+                        date: String(f.get("date")),
+                        description: String(f.get("description")).slice(0, 120),
+                      },
+                    ],
+                  }));
+                  finish("Ingreso registrado.");
+                });
+              }}
+            >
+              <label>
+                Importe ({baseCurrency})
+                <input name="amount" inputMode="decimal" required />
+              </label>
+              <label>
+                Fecha
+                <input name="date" type="date" defaultValue={today()} required />
+              </label>
+              <label>
+                Descripción
+                <input name="description" maxLength={120} placeholder="Parte 2 del sueldo" />
+              </label>
+              <button className="primary" disabled={busy}>
+                Guardar ingreso
+              </button>
             </form>
           )}
           {modal === "reserve" && (
