@@ -61,6 +61,7 @@ export type Proposal = {
   id: string;
   items: Expense[];
   category?: Category;
+  incomes?: Income[];
   receipt?: {
     hash: string;
     path: string;

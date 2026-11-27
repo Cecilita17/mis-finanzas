@@ -366,8 +366,19 @@ function ProposalCard({
           ? "Revisión del comprobante"
           : proposal.category
             ? "Cambio de categoría"
-            : "Gastos propuestos"}
+            : proposal.incomes && !proposal.items.length
+              ? "Ingresos propuestos"
+              : "Gastos propuestos"}
       </h3>
+      {proposal.incomes?.map((income) => (
+        <div className="proposal-item" key={income.id}>
+          <b>{money(income.amount, data.baseCurrency)}</b>
+          <small>
+            {income.date}
+            {income.description ? " · " + income.description : ""}
+          </small>
+        </div>
+      ))}
       {proposal.category && (
         <p>
           <b>{proposal.category.name}</b> ·{" "}

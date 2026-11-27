@@ -259,6 +259,21 @@ test("valida en backend propuestas de Groq, confirmaciones y tickets duplicados"
     );
     assert.equal((await askNotice()).status, 422);
     assert.equal(ledger.expenses.length, countBefore + 1);
+    result = {
+      text: "Revisá este ingreso.",
+      incomes: [{ amount: 40_000_000, date, description: "Parte 2 del sueldo" }],
+    };
+    const income = await proposal({ text: "Me entraron 400 mil de la parte 2" });
+    assert.equal(income.items.length, 0);
+    assert.equal(income.incomes?.length, 1);
+    assert.equal(ledger.incomes?.length ?? 0, 0);
+    const confirmIncome = () =>
+      call({ action: "confirm", id: income.id, items: [] });
+    assert.equal((await confirmIncome()).status, 200);
+    assert.equal((await confirmIncome()).status, 200);
+    assert.equal(ledger.incomes?.length, 1);
+    assert.equal(ledger.incomes?.[0].amount, 40_000_000);
+    assert.equal(ledger.expenses.length, countBefore + 1);
   } finally {
     globalThis.fetch = realFetch;
     for (const key of [
