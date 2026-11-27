@@ -27,7 +27,6 @@ const results: Record<string, string> = {
   "sin-reportes": "Autorización exitosa. Mercado Pago devolvió una lista vacía de reportes.",
   "sin-acceso": "Autorización exitosa. La API no devolvió una lista de reportes utilizable.",
   solicitado: "Mercado Pago recibió la solicitud. Cuando termine de generar el reporte, usá Consultar reportes.",
-  "reporte-permiso": "Mercado Pago rechazó el permiso para generar el reporte.",
   "reporte-error": "Mercado Pago no aceptó la solicitud de reporte.",
   token: "Mercado Pago rechazó el intercambio de la autorización.",
   error: "La autorización no se completó. Volvé a iniciar la prueba.",
@@ -35,7 +34,13 @@ const results: Record<string, string> = {
 
 export default function AdminPanel() {
   const [probe, setProbe] = useState(() => {
-    const status = new URLSearchParams(window.location.search).get("mp-prueba");
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("mp-prueba");
+    const http = params.get("mp-http") ?? "";
+    const code = params.get("mp-codigo") ?? "";
+    if (status === "reporte-error" && /^[45]\d{2}$/.test(http)) {
+      return `Mercado Pago rechazó el reporte (HTTP ${http}${/^[a-z][a-z0-9_]{0,63}$/.test(code) ? ", " + code : ""}).`;
+    }
     return status ? results[status] ?? "" : "";
   });
   const [probing, setProbing] = useState(false);

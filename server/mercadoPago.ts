@@ -73,16 +73,24 @@ export async function mercadoPago(request: Request) {
     const { access_token: accessToken } = await token.json();
     if (typeof accessToken !== "string" || !accessToken) return finish("token");
     if (mode === "create") {
-      const end = new Date();
-      const begin = new Date(end.getTime() - 7 * 86_400_000);
+      const today = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "America/Argentina/Cordoba",
+      }).format(new Date());
+      const midnight = Date.parse(today + "T00:00:00-03:00");
+      const end = new Date(midnight - 1000);
+      const begin = new Date(midnight - 7 * 86_400_000);
       const report = await fetch("https://api.mercadopago.com/v1/account/settlement_report", {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ begin_date: begin.toISOString(), end_date: end.toISOString() }),
         signal: AbortSignal.timeout(8000),
       });
-      if (report.status === 202) return finish("solicitado");
-      return finish(report.status === 401 || report.status === 403 ? "reporte-permiso" : "reporte-error");
+      if (report.ok) return finish("solicitado");
+      const body: unknown = await report.json().catch(() => null);
+      const code = body && typeof body === "object" && "error" in body &&
+        typeof body.error === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(body.error)
+        ? body.error : null;
+      return finish(`reporte-error&mp-http=${report.status}${code ? "&mp-codigo=" + code : ""}`);
     }
     const reports = await fetch("https://api.mercadopago.com/v1/account/settlement_report/list", {
       headers: { Authorization: `Bearer ${accessToken}` },
