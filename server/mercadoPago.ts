@@ -101,7 +101,7 @@ export async function mercadoPago(request: Request) {
         signal: AbortSignal.timeout(6000),
       });
     }
-    const rejected = async (stage: string, response: Response, previous = "") => {
+    const rejected = async (stage: string, response: Response, previous = "", onlyPrevious = false) => {
       const body = await response.json().catch(() => null);
       const candidates: unknown[] = [
         body?.error?.code, body?.cause?.[0]?.code, body?.errors?.[0]?.code, body?.code, body?.error,
@@ -116,7 +116,7 @@ export async function mercadoPago(request: Request) {
       const fields = ["file_format", "display_timezone", "columns", "notifiers", "internal_sftp", "structure"];
       const field = fields.find(value => message.includes(value));
       if (field) query.set("mp-campo", field);
-      const detail = [previous, safeErrorDetail(body)].filter(Boolean).join(" || ").slice(0, 480);
+      const detail = [previous, onlyPrevious ? "" : safeErrorDetail(body)].filter(Boolean).join(" || ").slice(0, 480);
       if (detail) query.set("mp-detalle", detail);
       return finish("retiros-error&" + query.toString());
     };
@@ -146,23 +146,30 @@ export async function mercadoPago(request: Request) {
         if (config.status === 404) {
           const columns = ["date_created", "operation_id", "status", "operation_type", "transaction_amount"].map(key => ({ key }));
           const notifiers = [{ type: "internal_sftp", data: {} }];
+          const sftp = [{ type: "internal_sftp", data: {} }];
+          const hook = [{ type: "webhook", data: { url: redirectUri.replace("/callback", "/report"), key: random() } }];
+          const full = { column_separator: ",", decimal_separator: ".", date_format: "yyyy-MM-dd", name: "activities_withdraw", prefix: "activities_" };
           const variants = [
-            { name: "mis-finanzas-retiros", columns, file_format: { column_separator: ",", decimal_separator: ".", date_format: "yyyy-MM-dd", name: "activities_withdraw", prefix: "activities_" }, display_timezone: "GMT-03" },
-            { name: "mis-finanzas-retiros", columns },
+            { structure: { name: "mis-finanzas-retiros", columns, file_format: full, display_timezone: "GMT-03" }, notifiers: sftp },
+            { structure: { name: "mis-finanzas-retiros", columns }, notifiers: sftp },
+            { structure: { name: "misfinanzas", columns: columns.slice(0, 2) }, notifiers: sftp },
+            { structure: { name: "misfinanzas", columns: columns.slice(0, 2) }, notifiers: hook },
           ];
           let setup!: Response;
           let earlier = "";
-          for (const structure of variants) {
+          for (const [index, variant] of variants.entries()) {
             setup = await withdrawalRequest("/config", {
               method: "POST",
               headers: mpHeaders,
-              body: JSON.stringify({ structure, notifiers }),
+              body: JSON.stringify(variant),
               signal: AbortSignal.timeout(6000),
             });
             if (setup.status !== 400) break;
-            earlier = [earlier, safeErrorDetail(await setup.clone().json().catch(() => null))].filter(Boolean).join(" || ");
+            const text = safeErrorDetail(await setup.clone().json().catch(() => null)) || "sin detalle";
+            if (index < variants.length - 1) earlier = [earlier, `v${index + 1}: ${text}`].filter(Boolean).join(" || ");
+            else earlier = [earlier, `v${index + 1}: ${text}`].join(" || ");
           }
-          if (!setup.ok) return rejected("crear-configuracion", setup, earlier);
+          if (!setup.ok) return rejected("crear-configuracion", setup, earlier, true);
         } else if (!config.ok) {
           return rejected("consultar-configuracion", config);
         }
