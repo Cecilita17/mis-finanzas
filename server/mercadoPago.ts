@@ -36,7 +36,8 @@ export async function mercadoPago(request: Request) {
     if (!admin.ok || await admin.json() !== true) return error(403);
     const state = random();
     const verifier = random();
-    const value = `${state}.${verifier}.${Date.now()}`;
+    const mode = url.searchParams.get("report") === "create" ? "create" : "list";
+    const value = `${state}.${verifier}.${Date.now()}.${mode}`;
     const authorize = new URL("https://auth.mercadopago.com.ar/authorization");
     authorize.search = new URLSearchParams({
       client_id: clientId, response_type: "code", platform_id: "mp",
@@ -49,12 +50,12 @@ export async function mercadoPago(request: Request) {
   }
 
   const raw = request.headers.get("Cookie")?.split(/;\s*/).find(part => part.startsWith(cookie + "="))?.slice(cookie.length + 1);
-  const match = /^([\w-]{43})\.([\w-]{43})\.(\d{13})\.([a-f0-9]{64})$/.exec(raw ?? "");
+  const match = /^([\w-]{43})\.([\w-]{43})\.(\d{13})\.(create|list)\.([a-f0-9]{64})$/.exec(raw ?? "");
   if (!match) return finish("error");
-  const [, state, verifier, issued, signature] = match;
+  const [, state, verifier, issued, mode, signature] = match;
   const age = Date.now() - Number(issued);
   if (age < 0 || age > 600_000 || state !== url.searchParams.get("state") ||
-    !timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(sign(`${state}.${verifier}.${issued}`, secret), "hex"))) return finish("error");
+    !timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(sign(`${state}.${verifier}.${issued}.${mode}`, secret), "hex"))) return finish("error");
   const code = url.searchParams.get("code");
   if (!code || code.length > 2048) return finish("error");
 
@@ -71,6 +72,18 @@ export async function mercadoPago(request: Request) {
     if (!token.ok) return finish("token");
     const { access_token: accessToken } = await token.json();
     if (typeof accessToken !== "string" || !accessToken) return finish("token");
+    if (mode === "create") {
+      const end = new Date();
+      const begin = new Date(end.getTime() - 7 * 86_400_000);
+      const report = await fetch("https://api.mercadopago.com/v1/account/settlement_report", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ begin_date: begin.toISOString(), end_date: end.toISOString() }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (report.status === 202) return finish("solicitado");
+      return finish(report.status === 401 || report.status === 403 ? "reporte-permiso" : "reporte-error");
+    }
     const reports = await fetch("https://api.mercadopago.com/v1/account/settlement_report/list", {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(8000),

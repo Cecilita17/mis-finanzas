@@ -26,6 +26,9 @@ const results: Record<string, string> = {
   "con-reportes": "Autorización exitosa. Mercado Pago permite ver la lista de reportes existentes.",
   "sin-reportes": "Autorización exitosa. Mercado Pago devolvió una lista vacía de reportes.",
   "sin-acceso": "Autorización exitosa. La API no devolvió una lista de reportes utilizable.",
+  solicitado: "Mercado Pago recibió la solicitud. Cuando termine de generar el reporte, usá Consultar reportes.",
+  "reporte-permiso": "Mercado Pago rechazó el permiso para generar el reporte.",
+  "reporte-error": "Mercado Pago no aceptó la solicitud de reporte.",
   token: "Mercado Pago rechazó el intercambio de la autorización.",
   error: "La autorización no se completó. Volvé a iniciar la prueba.",
 };
@@ -37,13 +40,13 @@ export default function AdminPanel() {
   });
   const [probing, setProbing] = useState(false);
 
-  async function connectMercadoPago() {
+  async function connectMercadoPago(mode: "create" | "list") {
     setProbing(true);
     setProbe("");
     try {
       const { data } = await db!.auth.getSession();
       if (!data.session) throw new Error();
-      const response = await fetch("/api/mercadopago/start", {
+      const response = await fetch(`/api/mercadopago/start?report=${mode}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${data.session.access_token}` },
       });
@@ -100,10 +103,13 @@ export default function AdminPanel() {
   return (
     <section className="card inner-card" aria-label="Usuarios registrados">
       <div>
-        <button type="button" disabled={probing} onClick={connectMercadoPago}>
-          {probing ? "Abriendo Mercado Pago…" : "Conectar Mercado Pago · Prueba"}
+        <button type="button" disabled={probing} onClick={() => void connectMercadoPago("list")}>
+          {probing ? "Abriendo Mercado Pago…" : "Consultar reportes de Mercado Pago"}
         </button>
-        <p>Prueba de autorización y acceso a reportes. No se guardan credenciales ni movimientos.</p>
+        <button type="button" disabled={probing} onClick={() => void connectMercadoPago("create")}>
+          Generar reporte de los últimos 7 días
+        </button>
+        <p>Mercado Pago pedirá autorización. Se muestran los resultados de la prueba de reportes.</p>
         {probe && <p role="status">{probe}</p>}
       </div>
       <div className="metrics">
