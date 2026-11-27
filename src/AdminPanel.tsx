@@ -55,11 +55,19 @@ export default function AdminPanel() {
     const code = params.get("mp-codigo") ?? "";
     const stage = params.get("mp-etapa");
     if (status === "retiros-error" && /^[45]\d{2}$/.test(http)) {
-      const step = stage === "configuracion" ? "configuración" : stage === "generacion" ? "generación" : "consulta";
+      const step = stage === "crear-configuracion" ? "al crear la configuración" :
+        stage === "consultar-configuracion" ? "al consultar la configuración" :
+        stage === "generacion" ? "al generar el reporte" : "al consultar el reporte";
+      const field = params.get("mp-campo");
+      const hint = [
+        /^[a-z][a-z0-9_.-]{1,63}$/i.test(code) ? code : "",
+        field && ["file_format", "display_timezone", "columns", "notifiers", "internal_sftp", "structure"].includes(field)
+          ? "campo " + field : "",
+      ].filter(Boolean);
       const detail = http === "401" || http === "403"
         ? " El acceso a la API de reportes fue denegado. El acceso de producción debe corresponder a la cuenta que autorizaste."
         : "";
-      return `Mercado Pago rechazó la ${step} del reporte de retiros (HTTP ${http}).${detail}`;
+      return `Mercado Pago respondió ${step} (HTTP ${http}${hint.length ? ", " + hint.join(", ") : ""}).${detail}`;
     }
     if (status === "reporte-error" && /^[45]\d{2}$/.test(http)) {
       return `Mercado Pago rechazó el reporte (HTTP ${http}${/^[a-z][a-z0-9_]{0,63}$/.test(code) ? ", " + code : ""}).`;

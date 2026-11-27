@@ -100,8 +100,23 @@ export async function mercadoPago(request: Request) {
         signal: AbortSignal.timeout(6000),
       });
     }
-    const rejected = (stage: string, response: Response) =>
-      finish(`retiros-error&mp-etapa=${stage}&mp-http=${response.status}`);
+    const rejected = async (stage: string, response: Response) => {
+      const body = await response.json().catch(() => null);
+      const candidates: unknown[] = [
+        body?.error?.code, body?.cause?.[0]?.code, body?.errors?.[0]?.code, body?.code, body?.error,
+      ];
+      const code = candidates.find(value =>
+        typeof value === "string" && /^[a-z][a-z0-9_.-]{1,63}$/i.test(value),
+      );
+      const query = new URLSearchParams({ "mp-etapa": stage, "mp-http": String(response.status) });
+      if (typeof code === "string") query.set("mp-codigo", code);
+      const message = [body?.message, body?.error?.message, body?.cause?.[0]?.description]
+        .filter(value => typeof value === "string").join(" ").toLowerCase();
+      const fields = ["file_format", "display_timezone", "columns", "notifiers", "internal_sftp", "structure"];
+      const field = fields.find(value => message.includes(value));
+      if (field) query.set("mp-campo", field);
+      return finish("retiros-error&" + query.toString());
+    };
     if (mode.startsWith("withdraw-check:")) {
       const id = mode.slice("withdraw-check:".length);
       const report = await withdrawalRequest(`/statements/${id}`, {
@@ -138,9 +153,9 @@ export async function mercadoPago(request: Request) {
             }),
             signal: AbortSignal.timeout(6000),
           });
-          if (!setup.ok) return rejected("configuracion", setup);
+          if (!setup.ok) return rejected("crear-configuracion", setup);
         } else if (!config.ok) {
-          return rejected("configuracion", config);
+          return rejected("consultar-configuracion", config);
         }
         const report = await withdrawalRequest("/statements", {
           method: "POST",
