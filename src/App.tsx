@@ -297,6 +297,9 @@ export default function App() {
 
   const info = summary(data, month);
   const cash = cashflow(data, month);
+  const realCash = cash.tracked && cash.active;
+  const spendable = realCash ? Math.min(cash.inHand, info.remaining) : info.remaining;
+  const freeNow = realCash ? Math.min(info.free, cash.inHand - info.pending) : info.free;
   const conf = settings(data, month);
   const baseCurrency = data.baseCurrency ?? "ARS";
   const money = (amount: number, currency: Currency = baseCurrency) =>
@@ -785,7 +788,7 @@ export default function App() {
                           <Pencil size={13} />
                         </button>
                       </div>
-                      <div className="big-money">{money(info.remaining)}</div>
+                      <div className="big-money">{money(spendable)}</div>
                     </div>
                     <span className="budget-percent">{used}% utilizado</span>
                   </div>
@@ -825,8 +828,8 @@ export default function App() {
                       </div>
                       <div>
                         <Check size={17} />
-                        <span>Podés gastar hoy</span>
-                        <b>{money(Math.max(0, Math.min(cash.inHand, info.remaining)))}</b>
+                        <span>Tope restante del mes</span>
+                        <b>{money(info.remaining)}</b>
                       </div>
                     </div>
                   )}
@@ -839,7 +842,7 @@ export default function App() {
                     <div>
                       <Wallet size={17} />
                       <span>Libre tras pendientes</span>
-                      <b>{money(info.free)}</b>
+                      <b>{money(freeNow)}</b>
                     </div>
                   </div>
                 </section>
@@ -872,7 +875,7 @@ export default function App() {
                     <h2>Presupuesto diario</h2>
                   </div>
                   <p>Podés gastar por día</p>
-                  <strong>{money(info.daily)}</strong>
+                  <strong>{money(realCash ? (info.left ? Math.max(0, Math.floor(freeNow / info.left)) : 0) : info.daily)}</strong>
                   <div className="daily-foot">
                     <Clock3 size={16} />
                     <span>
