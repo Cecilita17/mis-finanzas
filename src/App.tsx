@@ -67,6 +67,7 @@ import {
 import { db, deleteAccount, mutateLedger, readLedger } from "./store";
 import { colors, icons } from "./icons";
 import Assistant from "./Assistant";
+import { takeMercadoPagoNotice, type MercadoPagoNotice } from "./mercadoPago";
 import AdminPanel from "./AdminPanel";
 
 type Page =
@@ -178,7 +179,21 @@ function Dialog({
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>("home");
+  const [paymentNotice, setPaymentNotice] = useState<MercadoPagoNotice | null>(
+    takeMercadoPagoNotice,
+  );
+  const [page, setPage] = useState<Page>(paymentNotice ? "assistant" : "home");
+  useEffect(() => {
+    const readNotice = () => {
+      const notice = takeMercadoPagoNotice();
+      if (notice) {
+        setPaymentNotice(notice);
+        setPage("assistant");
+      }
+    };
+    window.addEventListener("hashchange", readNotice);
+    return () => window.removeEventListener("hashchange", readNotice);
+  }, []);
   const [month, setMonth] = useState(today().slice(0, 7));
   const [session, setSession] = useState<Session | null>(null);
   const [adminId, setAdminId] = useState<string | null>(null);
@@ -1055,6 +1070,8 @@ export default function App() {
           )}
           {page === "assistant" && (
             <Assistant
+              paymentNotice={paymentNotice}
+              dismissPaymentNotice={() => setPaymentNotice(null)}
               data={data}
               session={session}
               save={save}

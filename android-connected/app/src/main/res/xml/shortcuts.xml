@@ -1,0 +1,8 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="detection-settings" android:enabled="true"
+        android:shortcutShortLabel="@string/detection_settings">
+        <intent android:action="app.misfinanzas.android.DETECTION_SETTINGS"
+            android:targetPackage="app.misfinanzas.android"
+            android:targetClass="app.misfinanzas.android.FinanceLauncher" />
+    </shortcut>
+</shortcuts>

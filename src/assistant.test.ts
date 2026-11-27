@@ -231,6 +231,34 @@ test("valida en backend propuestas de Groq, confirmaciones y tickets duplicados"
       text: "¿Cuánto gasté en estas compras?",
     });
     assert.match((await totals.json()).messages[1].text, /NZD\s*392,50/);
+    const notice = {
+      id: "a".repeat(64),
+      amount: 1_550_005,
+      postedAt: Date.now(),
+    };
+    const askNotice = (postedAt = notice.postedAt) =>
+      call({
+        action: "payment_notice",
+        text: "Poné la compra que acabo de hacer en Almuerzos y cenas",
+        notice: { ...notice, postedAt },
+      });
+    assert.equal((await askNotice(Date.now() - 31 * 60_000)).status, 422);
+    const countBefore = ledger.expenses.length;
+    assert.equal((await askNotice()).status, 200);
+    const pending = ledger.messages.at(-1)!.proposal!;
+    assert.equal(pending.items[0].amount, notice.amount);
+    assert.equal(pending.items[0].category, "2");
+    assert.equal(ledger.expenses.length, countBefore);
+    const messageCount = ledger.messages.length;
+    assert.equal((await askNotice()).status, 200);
+    assert.equal(ledger.messages.length, messageCount);
+    assert.equal(
+      (await call({ action: "confirm", id: pending.id, items: pending.items }))
+        .status,
+      200,
+    );
+    assert.equal((await askNotice()).status, 422);
+    assert.equal(ledger.expenses.length, countBefore + 1);
   } finally {
     globalThis.fetch = realFetch;
     for (const key of [

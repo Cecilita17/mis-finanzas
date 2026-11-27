@@ -21,7 +21,13 @@ import {
   type Proposal,
   type ReceiptReview,
 } from "./model";
+import {
+  refersToMercadoPagoNotice,
+  type MercadoPagoNotice,
+} from "./mercadoPago";
 type Props = {
+  paymentNotice: MercadoPagoNotice | null;
+  dismissPaymentNotice: () => void;
   data: Ledger;
   session: Session | null;
   save: (fn: (data: Ledger) => Ledger) => Promise<void>;
@@ -44,6 +50,8 @@ export default function Assistant({
   upload,
   notify,
   refresh,
+  paymentNotice,
+  dismissPaymentNotice,
 }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -89,11 +97,28 @@ export default function Assistant({
   }
   async function ask(value: string, file?: File) {
     if (!value.trim() && !file) return;
+    if (!file && paymentNotice && refersToMercadoPagoNotice(value)) {
+      proposePayment(value);
+      return;
+    }
     await run(async () => {
       if (!session) throw new Error("Iniciá sesión para usar el asistente IA.");
       const attachment = file ? await upload(file) : {};
       await call({ action: "ask", text: value, ...attachment });
       await refresh();
+      setText("");
+    });
+  }
+  function proposePayment(value: string) {
+    if (!paymentNotice) return;
+    void run(async () => {
+      await call({
+        action: "payment_notice",
+        text: value,
+        notice: paymentNotice,
+      });
+      await refresh();
+      dismissPaymentNotice();
       setText("");
     });
   }
@@ -130,6 +155,34 @@ export default function Assistant({
           <small>Revisá las propuestas antes de guardarlas.</small>
         </div>
       </div>
+      {paymentNotice && (
+        <div className="payment-notice">
+          <strong>
+            Último aviso de Mercado Pago · {money(paymentNotice.amount)}
+          </strong>
+          <p className="muted">
+            Decí en qué categoría querés registrarlo o revisá el movimiento.
+          </p>
+          <div className="actions">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                proposePayment("Revisar el último aviso de Mercado Pago")
+              }
+            >
+              Revisar movimiento
+            </button>
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={dismissPaymentNotice}
+            >
+              Ocultar
+            </button>
+          </div>
+        </div>
+      )}
       <div className="chat-log" aria-live="polite">
         {!data.messages.length && (
           <div className="welcome-chat">

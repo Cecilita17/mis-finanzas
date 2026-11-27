@@ -167,6 +167,15 @@ const input = z.discriminatedUnion("action", [
     path: z.string().max(200).optional(),
   }),
   z.object({
+    action: z.literal("payment_notice"),
+    text: z.string().trim().min(1).max(1500),
+    notice: z.object({
+      id: z.string().regex(/^[a-f0-9]{64}$/),
+      amount: cents.positive().max(10_000_000_000),
+      postedAt: z.number().int().positive(),
+    }),
+  }),
+  z.object({
     action: z.literal("confirm"),
     id,
     items: z.array(confirmItem).max(100),
@@ -259,6 +268,14 @@ export async function handler(request: Request) {
         )
           throw new Error("La propuesta no pudo verificarse.");
         if (proposal.status === "saved") return data;
+        if (
+          body.items.some(
+            (item) =>
+              item.id.startsWith("mp-") &&
+              data.expenses.some((expense) => expense.id === item.id),
+          )
+        )
+          throw new Error("Este movimiento de Mercado Pago ya está guardado.");
         const receipt = proposal.receipt;
         if (body.receiptReview && !receipt)
           throw new Error("Solo se puede conciliar un comprobante.");
@@ -361,6 +378,75 @@ export async function handler(request: Request) {
                 }
               : m,
           ),
+        };
+      });
+      return Response.json({ ok: true });
+    }
+    if (body.action === "payment_notice") {
+      if (!proposalKey)
+        return fail("Falta configurar el asistente en el servidor.", 503);
+      const age = Date.now() - body.notice.postedAt;
+      if (age < 0 || age > 30 * 60_000)
+        return fail("El aviso de Mercado Pago ya venció.", 422);
+      const date = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "America/Argentina/Cordoba",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(body.notice.postedAt));
+      const expenseId = "mp-" + body.notice.id;
+      const normalize = (value: string) =>
+        value
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9 ]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      const input = " " + normalize(body.text) + " ";
+      await persist((data) => {
+        if (data.expenses.some((expense) => expense.id === expenseId))
+          throw new Error("Este movimiento de Mercado Pago ya está guardado.");
+        if (
+          data.messages.some(
+            (m) =>
+              !m.proposal?.status &&
+              m.proposal?.items.some((e) => e.id === expenseId),
+          )
+        )
+          return data;
+        const categories = data.categories.filter(
+          (c) => !c.archived && input.includes(" " + normalize(c.name) + " "),
+        );
+        const proposal: Proposal = {
+          id: crypto.randomUUID(),
+          items: [
+            {
+              id: expenseId,
+              amount: body.notice.amount,
+              currency: "ARS",
+              ...expenseRates(data, "ARS", date.slice(0, 7)),
+              category: categories.length === 1 ? categories[0].id : "",
+              date,
+              description: "Aviso de Mercado Pago",
+              merchant: "",
+              method: "Otro",
+            },
+          ],
+        };
+        proposal.signature = sign(proposal, user.id, proposalKey);
+        return {
+          ...data,
+          messages: [
+            ...data.messages,
+            { id: crypto.randomUUID(), role: "user", text: body.text },
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              text: "Revisá el importe y la categoría del aviso antes de guardarlo. Si fue una transferencia entre tus propias cuentas, descartalo.",
+              proposal,
+            },
+          ],
         };
       });
       return Response.json({ ok: true });

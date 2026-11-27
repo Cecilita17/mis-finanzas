@@ -1788,3 +1788,16 @@ h1, h2, h3, .big-money, .brand b {
 .admin-users dd {
   margin: 0;
 }
+
+.assistant-card:has(.payment-notice) {
+  grid-template-rows: auto auto minmax(225px, 1fr) auto;
+}
+.payment-notice {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft-sage);
+  font-size: 14px;
+}
+.payment-notice .actions {
+  margin: 8px 0 0;
+}

@@ -1,4 +1,5 @@
 <resources>
+    <string name="detection_settings">Avisos de Mercado Pago</string>
     <string name="app_url" translatable="false">https://mis-finanzas-ten-ecru.vercel.app/</string>
     <color name="app_background">#f8f5f0</color>
     <string name="asset_statements" translatable="false">[{\"relation\":[\"delegate_permission/common.handle_all_urls\"],\"target\":{\"namespace\":\"web\",\"site\":\"https://mis-finanzas-ten-ecru.vercel.app\"}}]</string>
