@@ -146,7 +146,15 @@ export async function mercadoPago(request: Request) {
             headers: mpHeaders,
             body: JSON.stringify({
               structure: {
-                name: "Mis Finanzas",
+                name: "mis-finanzas-retiros",
+                file_format: {
+                  column_separator: ",",
+                  decimal_separator: ".",
+                  date_format: "yyyy-MM-dd",
+                  name: "activities_withdraw",
+                  prefix: "activities_",
+                },
+                display_timezone: "GMT-03",
                 columns: ["date_created", "operation_id", "status", "operation_type", "transaction_amount"].map(key => ({ key })),
               },
               notifiers: [{ type: "internal_sftp", data: {} }],
