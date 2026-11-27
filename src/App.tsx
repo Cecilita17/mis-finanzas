@@ -36,6 +36,7 @@ import {
 import {
   allocation,
   amountInput,
+  balanceAdjustment,
   cashflow,
   currencies,
   changeBaseCurrency,
@@ -106,6 +107,7 @@ type Modal =
   | "rule"
   | "reserve"
   | "income"
+  | "balance"
   | null;
 const uid = () => crypto.randomUUID();
 const blankCategory = (): Category => ({
@@ -1425,6 +1427,9 @@ export default function App() {
                 <button className="primary" onClick={() => open("income")}>
                   <Plus size={18} /> Registrar ingreso
                 </button>
+                <button className="secondary" onClick={() => open("balance")}>
+                  Corregir saldo en mano
+                </button>
               </div>
               {(data.incomes ?? [])
                 .filter((i) => i.date.startsWith(month))
@@ -1624,6 +1629,8 @@ export default function App() {
                         ? "Aporte al fondo"
                         : modal === "income"
                           ? "Registrar ingreso"
+                          : modal === "balance"
+                            ? "Corregir saldo en mano"
                         : "Presupuesto del mes"
           }
           close={() => setModal(null)}
@@ -2489,6 +2496,42 @@ export default function App() {
                   </button>
                 )}
               </div>
+            </form>
+          )}
+          {modal === "balance" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                void action(async () => {
+                  const target = cents(String(f.get("amount")));
+                  if (!Number.isSafeInteger(target))
+                    throw new Error("Ingresá un importe válido.");
+                  const adjustment = balanceAdjustment(data, target, today(), uid());
+                  if (!adjustment) {
+                    finish("El saldo ya coincide con lo que mostraba la app.");
+                    return;
+                  }
+                  await save((d) => ({
+                    ...d,
+                    incomes: [...(d.incomes ?? []), { ...adjustment, id: uid() }],
+                  }));
+                  finish("Saldo corregido.");
+                });
+              }}
+            >
+              <p>
+                Ahora la app calcula {money(-(balanceAdjustment(data, 0, today(), "x")?.amount ?? 0))} en mano. Escribí
+                cuánto tenés realmente y se guarda la diferencia como un ajuste.
+                Tu presupuesto no cambia.
+              </p>
+              <label>
+                Dinero que tenés hoy ({baseCurrency})
+                <input name="amount" inputMode="decimal" required />
+              </label>
+              <button className="primary" disabled={busy}>
+                Guardar saldo
+              </button>
             </form>
           )}
           {modal === "income" && (

@@ -274,6 +274,17 @@ test("valida en backend propuestas de Groq, confirmaciones y tickets duplicados"
     assert.equal(ledger.incomes?.length, 1);
     assert.equal(ledger.incomes?.[0].amount, 40_000_000);
     assert.equal(ledger.expenses.length, countBefore + 1);
+    result = { text: "Revisá tu saldo.", balance: { amount: 15_000_000 } };
+    const balance = await proposal({ text: "Tengo 150 mil en mano" });
+    assert.equal(balance.balance?.amount, 15_000_000);
+    const incomesBefore = ledger.incomes?.length ?? 0;
+    const confirmBalance = () =>
+      call({ action: "confirm", id: balance.id, items: [] });
+    assert.equal((await confirmBalance()).status, 200);
+    assert.equal((await confirmBalance()).status, 200);
+    assert.equal(ledger.incomes?.length, incomesBefore + 1);
+    const { cashflow } = await import("./model");
+    assert.equal(cashflow(ledger, date.slice(0, 7)).inHand, 15_000_000);
   } finally {
     globalThis.fetch = realFetch;
     for (const key of [

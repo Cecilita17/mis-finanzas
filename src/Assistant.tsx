@@ -11,6 +11,8 @@ import {
   X,
 } from "lucide-react";
 import {
+  balanceAdjustment,
+  today,
   money,
   amountInput,
   cents,
@@ -366,10 +368,28 @@ function ProposalCard({
           ? "Revisión del comprobante"
           : proposal.category
             ? "Cambio de categoría"
-            : proposal.incomes && !proposal.items.length
-              ? "Ingresos propuestos"
-              : "Gastos propuestos"}
+            : proposal.balance
+              ? "Corregir saldo en mano"
+              : proposal.incomes && !proposal.items.length
+                ? "Ingresos propuestos"
+                : "Gastos propuestos"}
       </h3>
+      {proposal.balance && (
+        <p>
+          Saldo real: <b>{money(proposal.balance.amount, data.baseCurrency)}</b>
+          {(() => {
+            const adjustment = balanceAdjustment(
+              data,
+              proposal.balance.amount,
+              today(),
+              "preview",
+            );
+            return adjustment
+              ? " · ajuste de " + money(adjustment.amount, data.baseCurrency)
+              : " · ya coincide con la app";
+          })()}
+        </p>
+      )}
       {proposal.incomes?.map((income) => (
         <div className="proposal-item" key={income.id}>
           <b>{money(income.amount, data.baseCurrency)}</b>

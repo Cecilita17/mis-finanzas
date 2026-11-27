@@ -55,6 +55,7 @@ export type Income = {
   date: string;
   amount: number;
   description: string;
+  kind?: "adjustment";
 };
 export type ReceiptReview = { total: number; adjustment: number };
 export type Proposal = {
@@ -62,6 +63,7 @@ export type Proposal = {
   items: Expense[];
   category?: Category;
   incomes?: Income[];
+  balance?: { amount: number };
   receipt?: {
     hash: string;
     path: string;
@@ -550,9 +552,13 @@ export function cashflow(data: Ledger, month: string) {
   const incomes = data.incomes ?? [];
   const start = incomes.map((i) => i.date.slice(0, 7)).sort()[0];
   if (!start || month < start)
-    return { tracked: !!start, received: 0, carry: 0, inHand: 0 };
-  const received = incomes
-    .filter((i) => i.date.startsWith(month))
+    return { tracked: !!start, active: false, received: 0, carry: 0, inHand: 0 };
+  const inMonth = incomes.filter((i) => i.date.startsWith(month));
+  const received = inMonth
+    .filter((i) => i.kind !== "adjustment")
+    .reduce((sum, i) => sum + i.amount, 0);
+  const adjusted = inMonth
+    .filter((i) => i.kind === "adjustment")
     .reduce((sum, i) => sum + i.amount, 0);
   const before = (date: string) => date.slice(0, 7) >= start && date.slice(0, 7) < month;
   const carry =
@@ -563,7 +569,32 @@ export function cashflow(data: Ledger, month: string) {
   const spent = data.expenses
     .filter((e) => e.date.startsWith(month))
     .reduce((sum, e) => sum + expenseValue(data, e), 0);
-  return { tracked: true, received, carry, inHand: carry + received - spent };
+  return {
+    tracked: true,
+    active: true,
+    received,
+    carry,
+    inHand: carry + received + adjusted - spent,
+  };
+}
+// Ajuste para que el saldo en mano del mes de `date` sea exactamente `target`.
+export function balanceAdjustment(
+  data: Ledger,
+  target: number,
+  date: string,
+  id: string,
+): Income | null {
+  const month = date.slice(0, 7);
+  const cash = cashflow(data, month);
+  const believed = cash.active
+    ? cash.inHand
+    : -data.expenses
+        .filter((e) => e.date.startsWith(month))
+        .reduce((sum, e) => sum + expenseValue(data, e), 0);
+  const amount = target - believed;
+  return amount
+    ? { id, date, amount, description: "Ajuste de saldo", kind: "adjustment" }
+    : null;
 }
 export function reserveBalance(data: Ledger, month: string) {
   const start = Object.keys(data.months).sort()[0];

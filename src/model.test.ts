@@ -201,10 +201,33 @@ test("los ingresos se acumulan y lo que sobra pasa al mes siguiente", async () =
     ],
     expenses: [expense("2026-09-10", 999_00), expense("2026-10-15", 120_000_00), expense("2026-11-10", 10_000_00)],
   };
-  assert.deepEqual(cashflow(data, "2026-09"), { tracked: true, received: 0, carry: 0, inHand: 0 });
+  assert.deepEqual(cashflow(data, "2026-09"), { tracked: true, active: false, received: 0, carry: 0, inHand: 0 });
   assert.equal(cashflow(data, "2026-10").inHand, 30_000_00);
   assert.equal(cashflow(data, "2026-11").carry, 30_000_00);
   assert.equal(cashflow(data, "2026-11").received, 30_000_00);
   assert.equal(cashflow(data, "2026-11").inHand, 50_000_00);
   assert.equal(cashflow(initial, "2026-11").tracked, false);
+});
+
+test("corregir el saldo en mano agrega un ajuste y no cuenta como cobrado", async () => {
+  const { cashflow, balanceAdjustment, initial } = await import("./model");
+  const base = {
+    ...initial,
+    expenses: [{
+      id: "e", amount: 70_000_00, currency: "ARS" as const, rate: 100, category: "1",
+      date: "2026-11-02", description: "", merchant: "", method: "Efectivo",
+    }],
+  };
+  const first = balanceAdjustment(base, 15_000_00, "2026-11-27", "x")!;
+  assert.equal(first.amount, 85_000_00);
+  const data = { ...base, incomes: [first] };
+  assert.equal(cashflow(data, "2026-11").inHand, 15_000_00);
+  assert.equal(cashflow(data, "2026-11").received, 0);
+  const lower = balanceAdjustment(data, 5_000_00, "2026-11-27", "y")!;
+  assert.equal(lower.amount, -10_000_00);
+  assert.equal(
+    cashflow({ ...data, incomes: [first, lower] }, "2026-12").carry,
+    5_000_00,
+  );
+  assert.equal(balanceAdjustment(data, 15_000_00, "2026-11-27", "z"), null);
 });
